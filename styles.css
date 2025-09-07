@@ -106,7 +106,7 @@ body {
 }
 
 /* Responsive adjustments for smaller screens - desktop only */
-@media (max-height: 976px) {
+@media (max-height: 1080px) {
     .main-content {
         margin-top: 60px; /* Reduce margin for smaller screens */
         height: calc(100vh - 60px);

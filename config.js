@@ -64,7 +64,7 @@ const BULLETIN_CONFIG = {
                 feedUrl: 'https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot',
                 maxItems: 5,
                 refreshInterval: 300000, // 5 minutes
-                showImages: false
+                showImages: true
             }
         },
         {
@@ -97,9 +97,12 @@ const BULLETIN_CONFIG = {
             size: 'small',
             config: {
                 videoUrls: [
-                    'files/mp4/LoveHeb1.mp4',
-                    'files/mp4/LoveHeb2.mp4',
-                    'files/mp4/CalmHeb1.mp4'
+                    'https://devisrael.z39.web.core.windows.net/files/mp4/CalmHeb1.mp4',
+                    'https://devisrael.z39.web.core.windows.net/files/mp4/Shlomo1.mp4',
+                    'https://devisrael.z39.web.core.windows.net/files/mp4/Arik1.mp4',
+                    'https://devisrael.z39.web.core.windows.net/files/mp4/Golan1.mp4',
+                    'https://devisrael.z39.web.core.windows.net/files/mp4/LoveHeb1.mp4',
+                    'https://devisrael.z39.web.core.windows.net/files/mp4/LoveHeb2.mp4'
                 ],
                 autoplay: true,
                 loop: true,
