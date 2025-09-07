@@ -244,6 +244,43 @@ body {
     margin-top: 5px;
 }
 
+.rss-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.rss-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+}
+
+.rss-icon:hover {
+    transform: scale(1.05);
+}
+
+.rss-text {
+    flex: 1;
+    min-width: 0; /* Allows text to shrink and wrap properly */
+}
+
+/* Responsive adjustments for RSS icons */
+@media (max-width: 768px) {
+    .rss-icon {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .rss-content {
+        gap: 8px;
+    }
+}
+
 /* Video player styles */
 .video-component {
     width: 100%;

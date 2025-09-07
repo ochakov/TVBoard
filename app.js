@@ -446,13 +446,27 @@ class BulletinBoard {
                 return;
             }
 
-            const html = items.map(item => `
-                <div class="rss-item">
-                    <h6>${this.escapeHtml(item.title || '')}</h6>
-                    <p>${this.escapeHtml((item.description || '').replace(/<[^>]*>/g, ''))}</p>
-                    <div class="rss-date">${item.pubDate ? new Date(item.pubDate).toLocaleDateString() : ''}</div>
-                </div>
-            `).join('');
+            const html = items.map(item => {
+                let imageHtml = '';
+                
+                // Check if showImages is enabled and item has an image
+                if (config.config.showImages && item.thumbnail) {
+                    imageHtml = `<img src="${this.escapeHtml(item.thumbnail)}" alt="${this.escapeHtml(item.title || '')}" class="rss-icon">`;
+                }
+                
+                return `
+                    <div class="rss-item">
+                        <div class="rss-content">
+                            ${imageHtml}
+                            <div class="rss-text">
+                                <h6>${this.escapeHtml(item.title || '')}</h6>
+                                <p>${this.escapeHtml((item.description || '').replace(/<[^>]*>/g, ''))}</p>
+                                <div class="rss-date">${item.pubDate ? new Date(item.pubDate).toLocaleDateString() : ''}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
             element.innerHTML = html;
         } catch (error) {

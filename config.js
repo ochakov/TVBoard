@@ -64,7 +64,7 @@ const BULLETIN_CONFIG = {
                 feedUrl: 'https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot',
                 maxItems: 5,
                 refreshInterval: 300000, // 5 minutes
-                showImages: true
+                showImages: false
             }
         },
         {
