@@ -5,7 +5,7 @@ const urlsToCache = [
   '/index.html',
   '/styles.css',
   '/app.js',
-  '/config.js',
+  'config.js',
   '/manifest.json',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
@@ -29,6 +29,19 @@ self.addEventListener('install', event => {
 
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', event => {
+  // Always fetch config.js from network to ensure fresh configuration
+  if (event.request.url.includes('config.js')) {
+    event.respondWith(
+      fetch(event.request)
+        .catch(error => {
+          console.log('Config.js fetch failed:', error);
+          // Fallback to cached version only if network fails
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then(response => {
