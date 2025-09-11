@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Admin - Digital Bulletin Board</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .config-card {
+            transition: transform 0.2s;
+        }
+        .config-card:hover {
+            transform: translateY(-2px);
+        }
+        .config-id {
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.5rem;
+        }
+        .status-active { background-color: #28a745; }
+        .status-inactive { background-color: #6c757d; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand">
+                <i class="fas fa-cogs me-2"></i>
+                Configuration Admin
+            </span>
+            <div class="d-flex">
+                <button class="btn btn-outline-light btn-sm me-2" id="refreshBtn">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                </button>
+                <button class="btn btn-warning btn-sm me-2" id="setupFirebaseBtn">
+                    <i class="fas fa-cloud me-1"></i>Firebase Setup
+                </button>
+                <button class="btn btn-info btn-sm me-2" onclick="window.open('messages-editor.html', '_blank')">
+                    <i class="fas fa-comments me-1"></i>Messages
+                </button>
+                <button class="btn btn-success btn-sm" id="newConfigBtn">
+                    <i class="fas fa-plus me-1"></i>New Config
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2>Configuration Management</h2>
+                    <div id="connectionStatus" class="badge bg-secondary">
+                        <i class="fas fa-circle me-1"></i>Connecting...
+                    </div>
+                </div>
+
+                <div id="configList" class="row">
+                    <div class="col-12 text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading configurations...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="configModalLabel">Configuration Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="modalConfigId" class="form-label">Configuration ID</label>
+                        <input type="text" class="form-control" id="modalConfigId" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalDescription" class="form-label">Description</label>
+                        <input type="text" class="form-control" id="modalDescription" placeholder="Enter description">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Last Updated</label>
+                        <div id="modalLastUpdated" class="form-control-plaintext">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Components</label>
+                        <div id="modalComponents" class="form-control-plaintext">-</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" id="deleteConfigBtn">
+                        <i class="fas fa-trash me-1"></i>Delete
+                    </button>
+                    <button type="button" class="btn btn-primary" id="editConfigBtn">
+                        <i class="fas fa-edit me-1"></i>Edit in App
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
+    <!-- Configuration files -->
+    <script src="firebase-config.js"></script>
+
+    <script>
+        class ConfigAdmin {
+            constructor() {
+                this.database = window.firebaseDatabase;
+                this.configurations = new Map();
+                this.currentModal = null;
+                
+                this.init();
+            }
+
+            init() {
+                if (!this.database) {
+                    this.showError('Firebase not configured. Please check firebase-config.js');
+                    return;
+                }
+
+                this.setupEventListeners();
+                this.checkConnection();
+                this.loadConfigurations();
+            }
+
+            setupEventListeners() {
+                document.getElementById('refreshBtn').addEventListener('click', () => {
+                    this.loadConfigurations();
+                });
+
+                document.getElementById('setupFirebaseBtn').addEventListener('click', async () => {
+                    if (window.configService) {
+                        try {
+                            const configId = await window.configService.setupFirebaseConfig();
+                            if (configId) {
+                                alert(`Firebase configuration set up successfully with ID: ${configId}`);
+                                this.loadConfigurations(); // Refresh the list
+                            }
+                        } catch (error) {
+                            alert('Failed to set up Firebase configuration: ' + error.message);
+                        }
+                    } else {
+                        alert('Configuration service not available');
+                    }
+                });
+
+                document.getElementById('newConfigBtn').addEventListener('click', () => {
+                    window.open('upload-config.html', '_blank');
+                });
+
+                document.getElementById('editConfigBtn').addEventListener('click', () => {
+                    const configId = document.getElementById('modalConfigId').value;
+                    if (configId) {
+                        // Store the config ID and open the main app
+                        localStorage.setItem('bulletinBoardConfigId', configId);
+                        window.open('index.html', '_blank');
+                    }
+                });
+
+                document.getElementById('deleteConfigBtn').addEventListener('click', () => {
+                    this.deleteConfiguration();
+                });
+            }
+
+            checkConnection() {
+                const statusElement = document.getElementById('connectionStatus');
+                
+                this.database.ref('.info/connected').on('value', (snapshot) => {
+                    if (snapshot.val() === true) {
+                        statusElement.className = 'badge bg-success';
+                        statusElement.innerHTML = '<i class="fas fa-circle me-1"></i>Connected';
+                    } else {
+                        statusElement.className = 'badge bg-danger';
+                        statusElement.innerHTML = '<i class="fas fa-circle me-1"></i>Disconnected';
+                    }
+                });
+            }
+
+            async loadConfigurations() {
+                const configList = document.getElementById('configList');
+                configList.innerHTML = `
+                    <div class="col-12 text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading configurations...</p>
+                    </div>
+                `;
+
+                try {
+                    const snapshot = await this.database.ref('configurations').once('value');
+                    const configs = snapshot.val();
+
+                    if (!configs) {
+                        configList.innerHTML = `
+                            <div class="col-12 text-center">
+                                <div class="alert alert-info">
+                                    <h4>No configurations found</h4>
+                                    <p>Create your first configuration using the "New Config" button.</p>
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    this.configurations.clear();
+                    configList.innerHTML = '';
+
+                    Object.keys(configs).forEach(configId => {
+                        const config = configs[configId];
+                        this.configurations.set(configId, config);
+                        this.createConfigCard(configId, config);
+                    });
+
+                } catch (error) {
+                    console.error('Failed to load configurations:', error);
+                    this.showError('Failed to load configurations: ' + error.message);
+                }
+            }
+
+            createConfigCard(configId, config) {
+                const configList = document.getElementById('configList');
+                const metadata = config.metadata || {};
+                const bulletinConfig = config.bulletinConfig || {};
+                const componentCount = bulletinConfig.components ? bulletinConfig.components.length : 0;
+                
+                const cardHtml = `
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card config-card h-100" data-config-id="${configId}">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span class="config-id">${configId}</span>
+                                <span class="status-indicator status-active" title="Active"></span>
+                            </div>
+                            <div class="card-body">
+                                <h6 class="card-title">${metadata.description || 'No description'}</h6>
+                                <p class="card-text">
+                                    <small class="text-muted">
+                                        <i class="fas fa-puzzle-piece me-1"></i>${componentCount} components<br>
+                                        <i class="fas fa-clock me-1"></i>Updated: ${metadata.uploadedAt ? new Date(metadata.uploadedAt).toLocaleDateString() : 'Unknown'}
+                                    </small>
+                                </p>
+                            </div>
+                            <div class="card-footer">
+                                <button class="btn btn-sm btn-outline-primary me-2" onclick="configAdmin.viewConfig('${configId}')">
+                                    <i class="fas fa-eye me-1"></i>View
+                                </button>
+                                <button class="btn btn-sm btn-outline-success" onclick="configAdmin.useConfig('${configId}')">
+                                    <i class="fas fa-play me-1"></i>Use
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                configList.insertAdjacentHTML('beforeend', cardHtml);
+            }
+
+            viewConfig(configId) {
+                const config = this.configurations.get(configId);
+                if (!config) return;
+
+                const metadata = config.metadata || {};
+                const bulletinConfig = config.bulletinConfig || {};
+                
+                document.getElementById('modalConfigId').value = configId;
+                document.getElementById('modalDescription').value = metadata.description || '';
+                document.getElementById('modalLastUpdated').textContent = metadata.uploadedAt ? 
+                    new Date(metadata.uploadedAt).toLocaleString() : 'Unknown';
+                document.getElementById('modalComponents').textContent = bulletinConfig.components ? 
+                    `${bulletinConfig.components.length} components configured` : 'No components';
+
+                this.currentModal = new bootstrap.Modal(document.getElementById('configModal'));
+                this.currentModal.show();
+            }
+
+            useConfig(configId) {
+                localStorage.setItem('bulletinBoardConfigId', configId);
+                window.open('index.html', '_blank');
+            }
+
+            async deleteConfiguration() {
+                const configId = document.getElementById('modalConfigId').value;
+                if (!configId) return;
+
+                if (!confirm(`Are you sure you want to delete configuration "${configId}"? This action cannot be undone.`)) {
+                    return;
+                }
+
+                try {
+                    await this.database.ref(`configurations/${configId}`).remove();
+                    console.log(`Configuration ${configId} deleted`);
+                    
+                    if (this.currentModal) {
+                        this.currentModal.hide();
+                    }
+                    
+                    this.loadConfigurations();
+                } catch (error) {
+                    console.error('Failed to delete configuration:', error);
+                    alert('Failed to delete configuration: ' + error.message);
+                }
+            }
+
+            showError(message) {
+                const configList = document.getElementById('configList');
+                configList.innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <h4>Error</h4>
+                            <p>${message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            window.configAdmin = new ConfigAdmin();
+        });
+    </script>
+</body>
+</html>

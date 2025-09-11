@@ -1,24 +1,122 @@
 // Digital Bulletin Board Application
 class BulletinBoard {
     constructor() {
-        this.config = BULLETIN_CONFIG;
+        this.config = null;
         this.components = new Map();
         this.weatherData = null;
-        this.translations = TRANSLATIONS;
-        this.currentLanguage = this.config.language.selected;
+        this.translations = null;
+        this.sizeConfig = null;
+        this.currentLanguage = 'he'; // Default language
+        this.configService = window.configService;
+        this.isInitialized = false;
         this.init();
     }
 
-    init() {
+    async init() {
+        try {
+            // Load configuration first
+            await this.loadConfiguration();
+
+            // Initialize the application
+            this.setupLanguage();
+            this.updateDateTime();
+            this.setupDateTimeInterval();
+            this.setupWeather();
+            this.loadComponents();
+            this.setupAutoRefresh();
+            this.setupResizeListener();
+            this.registerServiceWorker();
+            this.setupFullscreen();
+            this.setupConfigChangeListener();
+
+            this.isInitialized = true;
+            console.log('BulletinBoard initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize BulletinBoard:', error);
+            this.showError('Failed to load configuration. Please check your setup.');
+        }
+    }
+
+    async loadConfiguration() {
+        console.log('Loading configuration...');
+        await this.configService.loadConfig();
+
+        this.config = this.configService.getConfig();
+        this.translations = this.configService.getTranslations();
+        this.sizeConfig = this.configService.getSizeConfig();
+        this.currentLanguage = this.config.language.selected;
+
+        console.log('Configuration loaded:', {
+            source: this.configService.isUsingFirebase() ? 'Firebase' : 'Local',
+            language: this.currentLanguage,
+            components: this.config.components.length
+        });
+    }
+
+    setupConfigChangeListener() {
+        // Listen for configuration changes from Firebase
+        this.configService.addChangeListener((type, data) => {
+            console.log(`Configuration changed: ${type}`);
+
+            switch (type) {
+                case 'config':
+                    this.config = data;
+                    this.currentLanguage = data.language.selected;
+                    this.reloadApplication();
+                    break;
+                case 'translations':
+                    this.translations = data;
+                    this.updateLanguageElements();
+                    break;
+                case 'sizeConfig':
+                    this.sizeConfig = data;
+                    this.reloadComponents();
+                    break;
+            }
+        });
+    }
+
+    reloadApplication() {
+        console.log('Reloading application due to configuration change...');
+
+        // Clear existing components
+        this.components.clear();
+        const gridElement = document.getElementById('bulletin-grid');
+        if (gridElement) {
+            gridElement.innerHTML = '';
+        }
+
+        // Reinitialize
         this.setupLanguage();
-        this.updateDateTime();
-        this.setupDateTimeInterval();
         this.setupWeather();
         this.loadComponents();
         this.setupAutoRefresh();
-        this.setupResizeListener();
-        this.registerServiceWorker();
-        this.setupFullscreen();
+    }
+
+    reloadComponents() {
+        console.log('Reloading components due to size configuration change...');
+        this.loadComponents();
+    }
+
+    updateLanguageElements() {
+        // Update any language-dependent elements
+        this.updateDateTime();
+    }
+
+    showError(message) {
+        const gridElement = document.getElementById('bulletin-grid');
+        if (gridElement) {
+            gridElement.innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-danger" role="alert">
+                        <h4 class="alert-heading">Configuration Error</h4>
+                        <p>${message}</p>
+                        <hr>
+                        <p class="mb-0">Please check the browser console for more details.</p>
+                    </div>
+                </div>
+            `;
+        }
     }
 
     // Language Setup
@@ -285,7 +383,7 @@ class BulletinBoard {
     }
 
     createComponent(componentConfig) {
-        const sizeConfig = SIZE_CONFIG[componentConfig.size] || SIZE_CONFIG.medium;
+        const sizeConfig = this.sizeConfig[componentConfig.size] || this.sizeConfig.medium;
         const colClass = `col-lg-${sizeConfig.cols} col-md-${sizeConfig.cols} col-sm-12 mb-4`;
         
         const wrapper = document.createElement('div');
@@ -394,24 +492,46 @@ class BulletinBoard {
             // Add timeout for RSS requests
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-            
+
             let data;
-            
-            // Check if the URL is a JSON file (local file or direct JSON)
-            if (config.config.feedUrl.endsWith('.json') || config.config.feedUrl.startsWith('files/')) {
+
+            // Check if this is a Firebase messages request
+            if (config.config.feedUrl === 'firebase://messages' || config.config.feedUrl.startsWith('firebase://messages/')) {
+                clearTimeout(timeoutId);
+
+                // Extract config ID from URL or use current config ID
+                let configId;
+                if (config.config.feedUrl.startsWith('firebase://messages/')) {
+                    configId = config.config.feedUrl.replace('firebase://messages/', '');
+                } else {
+                    configId = this.configService.getCurrentConfigId();
+                }
+
+                if (!configId) {
+                    throw new Error('No configuration ID available for Firebase messages');
+                }
+
+                if (!window.messagesService || !window.messagesService.isAvailable()) {
+                    throw new Error('Firebase messages service not available');
+                }
+
+                // Load messages from Firebase
+                data = await window.messagesService.getMessages(configId);
+
+            } else if (config.config.feedUrl.endsWith('.json') || config.config.feedUrl.startsWith('files/')) {
                 // Direct JSON fetch for local files or JSON URLs
                 const response = await fetch(config.config.feedUrl, {
                     signal: controller.signal
                 });
-                
+
                 clearTimeout(timeoutId);
-                
+
                 if (!response.ok) {
                     throw new Error(`JSON fetch failed: ${response.status} ${response.statusText}`);
                 }
-                
+
                 data = await response.json();
-                
+
                 // Handle direct JSON format (assuming it has items array)
                 if (data.items && Array.isArray(data.items)) {
                     // Already in the expected format
@@ -461,7 +581,11 @@ class BulletinBoard {
                             <div class="rss-text">
                                 <h6>${this.escapeHtml(item.title || '')}</h6>
                                 <p>${this.escapeHtml((item.description || '').replace(/<[^>]*>/g, ''))}</p>
-                                <div class="rss-date">${item.pubDate ? new Date(item.pubDate).toLocaleDateString() : ''}</div>
+                                <div class="rss-date">${item.pubDate ? new Date(item.pubDate).toLocaleDateString(this.config.language.dateFormat, {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                }) : ''}</div>
                             </div>
                         </div>
                     </div>
@@ -495,10 +619,12 @@ class BulletinBoard {
 
         // Set up video source rotation if multiple URLs
         if (config.config.videoUrls.length > 1) {
-            let currentIndex = 0;
+            // Randomize the initial video selection if enabled
+            let currentIndex = config.config.randomizeStart ?
+                Math.floor(Math.random() * config.config.videoUrls.length) : 0;
             video.src = config.config.videoUrls[currentIndex];
             video.loop = false; // Disable loop when cycling through multiple videos
-            
+
             video.addEventListener('ended', () => {
                 currentIndex = (currentIndex + 1) % config.config.videoUrls.length;
                 video.src = config.config.videoUrls[currentIndex];
@@ -525,6 +651,20 @@ class BulletinBoard {
         video.oncanplay = () => {
             clearTimeout(timeout);
         };
+
+        // Add random starting position when video metadata is loaded
+        video.addEventListener('loadedmetadata', () => {
+            if (config.config.randomizeStart && video.duration) {
+                const minLength = config.config.minVideoLength || 30;
+                if (video.duration > minLength) {
+                    // Start at a random position, but not in the last 10% to avoid ending too quickly
+                    const maxStartTime = video.duration * 0.9;
+                    const randomStartTime = Math.random() * maxStartTime;
+                    video.currentTime = randomStartTime;
+                    console.log(`Video randomized: starting at ${Math.floor(randomStartTime)}s of ${Math.floor(video.duration)}s`);
+                }
+            }
+        });
 
         element.innerHTML = '';
         element.appendChild(video);
@@ -691,6 +831,11 @@ class BulletinBoard {
 }
 
 // Initialize the application when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    new BulletinBoard();
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const app = new BulletinBoard();
+        // The initialization is now handled asynchronously within the constructor
+    } catch (error) {
+        console.error('Failed to initialize application:', error);
+    }
 });

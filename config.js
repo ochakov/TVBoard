@@ -84,7 +84,7 @@ const BULLETIN_CONFIG = {
             title: 'הודעות',
             size: 'small',
             config: {
-                feedUrl: 'files/messages.json',
+                feedUrl: 'firebase://messages', // Use Firebase messages instead of local JSON
                 maxItems: 5,
                 refreshInterval: 300000, // 5 minutes
                 showImages: false
@@ -107,7 +107,9 @@ const BULLETIN_CONFIG = {
                 autoplay: true,
                 loop: true,
                 muted: false,
-                refreshInterval: 0
+                refreshInterval: 0,
+                randomizeStart: true, // Randomize initial video and starting position
+                minVideoLength: 30 // Only randomize position for videos longer than this (seconds)
             }
         }
     ]

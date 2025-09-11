@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>העברת הודעות ל-Firebase</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Heebo', sans-serif;
+        }
+        .log-container {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 1rem;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.875rem;
+        }
+        .log-entry {
+            margin-bottom: 0.25rem;
+        }
+        .log-success { color: #198754; }
+        .log-error { color: #dc3545; }
+        .log-info { color: #0d6efd; }
+        .log-warning { color: #fd7e14; }
+        .preview-card {
+            border-right: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title mb-0">
+                            <i class="fas fa-database me-2"></i>
+                            העברת הודעות ל-Firebase
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>הוראות:</strong>
+                            <ol class="mb-0 mt-2">
+                                <li>וודא שהגדרת את פרויקט Firebase ב-<code>firebase-config.js</code></li>
+                                <li>בחר את מזהה התצורה שאליו תרצה להעביר את ההודעות</li>
+                                <li>לחץ על "העבר הודעות" כדי להעביר את ההודעות מ-<code>files/messages.json</code> ל-Firebase</li>
+                            </ol>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="configIdInput" class="form-label">מזהה תצורה</label>
+                                    <input type="text" class="form-control" id="configIdInput" placeholder="לדוגמה: lobby-display" required>
+                                    <div class="form-text">מזהה התצורה שאליה יועברו ההודעות</div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <h5>סטטוס חיבור</h5>
+                                    <div id="status-container">
+                                        <div class="d-flex align-items-center">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                                <span class="visually-hidden">טוען...</span>
+                                            </div>
+                                            <span>בודק חיבור ל-Firebase...</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <button id="migrate-btn" class="btn btn-primary" disabled>
+                                        <span class="spinner-border spinner-border-sm me-2 d-none" role="status"></span>
+                                        <i class="fas fa-upload me-2"></i>העבר הודעות
+                                    </button>
+                                    <button id="preview-btn" class="btn btn-secondary ms-2" disabled>
+                                        <i class="fas fa-eye me-2"></i>תצוגה מקדימה
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <h5>תצוגה מקדימה של ההודעות</h5>
+                                    <div id="preview-container" style="max-height: 300px; overflow-y: auto;">
+                                        <div class="text-muted text-center p-3">
+                                            לחץ על "תצוגה מקדימה" כדי לראות את ההודעות
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <h5>יומן העברה</h5>
+                            <div id="log-container" class="log-container">
+                                <div class="log-entry log-info">מאתחל...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
+    <!-- Configuration files -->
+    <script src="firebase-config.js"></script>
+    <script src="messages-service.js"></script>
+
+    <script>
+        class MessagesMigrator {
+            constructor() {
+                this.logContainer = document.getElementById('log-container');
+                this.statusContainer = document.getElementById('status-container');
+                this.migrateBtn = document.getElementById('migrate-btn');
+                this.previewBtn = document.getElementById('preview-btn');
+                this.configIdInput = document.getElementById('configIdInput');
+                this.previewContainer = document.getElementById('preview-container');
+                this.messagesData = null;
+                
+                this.init();
+            }
+
+            init() {
+                this.log('מאתחל מעביר הודעות...', 'info');
+                this.checkFirebaseConnection();
+                this.loadLocalMessages();
+                
+                this.migrateBtn.addEventListener('click', () => this.migrateMessages());
+                this.previewBtn.addEventListener('click', () => this.showPreview());
+            }
+
+            log(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString('he-IL', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${type}`;
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                this.logContainer.appendChild(logEntry);
+                this.logContainer.scrollTop = this.logContainer.scrollHeight;
+            }
+
+            checkFirebaseConnection() {
+                if (!window.firebaseDatabase) {
+                    this.updateStatus('Firebase לא מחובר', 'danger');
+                    this.log('Firebase database לא זמין. בדוק את firebase-config.js', 'error');
+                    return;
+                }
+
+                // Test connection
+                window.firebaseDatabase.ref('.info/connected').on('value', (snapshot) => {
+                    if (snapshot.val() === true) {
+                        this.updateStatus('Firebase מחובר', 'success');
+                        this.log('חיבור Firebase הוקם בהצלחה', 'success');
+                        this.migrateBtn.disabled = false;
+                        this.previewBtn.disabled = false;
+                    } else {
+                        this.updateStatus('Firebase מנותק', 'warning');
+                        this.log('חיבור Firebase אבד', 'warning');
+                    }
+                });
+            }
+
+            updateStatus(message, type) {
+                const iconClass = type === 'success' ? 'check-circle' : 
+                                 type === 'danger' ? 'x-circle' : 
+                                 type === 'warning' ? 'exclamation-triangle' : 'info-circle';
+                
+                this.statusContainer.innerHTML = `
+                    <div class="alert alert-${type} mb-0 py-2">
+                        <i class="fas fa-${iconClass} me-2"></i>${message}
+                    </div>
+                `;
+            }
+
+            async loadLocalMessages() {
+                this.log('טוען הודעות מקומיות...', 'info');
+                
+                try {
+                    const response = await fetch('files/messages.json');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    this.messagesData = await response.json();
+                    this.log(`✓ נטענו ${this.messagesData.items?.length || 0} הודעות מקומיות`, 'success');
+                    
+                } catch (error) {
+                    this.log(`✗ שגיאה בטעינת הודעות מקומיות: ${error.message}`, 'error');
+                    this.messagesData = null;
+                }
+            }
+
+            showPreview() {
+                if (!this.messagesData || !this.messagesData.items) {
+                    this.previewContainer.innerHTML = `
+                        <div class="alert alert-warning">
+                            לא נמצאו הודעות לתצוגה מקדימה
+                        </div>
+                    `;
+                    return;
+                }
+
+                const previewHtml = this.messagesData.items.map((message, index) => `
+                    <div class="card preview-card mb-2">
+                        <div class="card-body py-2">
+                            <h6 class="card-title mb-1">${this.escapeHtml(message.title)}</h6>
+                            <p class="card-text small mb-1">${this.escapeHtml(message.description)}</p>
+                            <small class="text-muted">
+                                <i class="fas fa-calendar me-1"></i>
+                                ${new Date(message.pubDate).toLocaleDateString('he-IL')}
+                            </small>
+                        </div>
+                    </div>
+                `).join('');
+
+                this.previewContainer.innerHTML = `
+                    <div class="mb-2">
+                        <strong>כותרת הפיד:</strong> ${this.escapeHtml(this.messagesData.feed?.title || 'לא מוגדר')}
+                    </div>
+                    <div class="mb-2">
+                        <strong>תיאור:</strong> ${this.escapeHtml(this.messagesData.feed?.description || 'לא מוגדר')}
+                    </div>
+                    <div class="mb-2">
+                        <strong>מספר הודעות:</strong> ${this.messagesData.items.length}
+                    </div>
+                    <hr>
+                    ${previewHtml}
+                `;
+            }
+
+            async migrateMessages() {
+                this.log('מתחיל העברת הודעות...', 'info');
+                this.setButtonLoading(this.migrateBtn, true);
+
+                try {
+                    // Get configuration ID
+                    const configId = this.configIdInput.value.trim();
+                    
+                    if (!configId) {
+                        this.configIdInput.classList.add('is-invalid');
+                        throw new Error('מזהה תצורה נדרש');
+                    }
+                    
+                    this.configIdInput.classList.remove('is-invalid');
+                    this.log(`משתמש במזהה תצורה: ${configId}`, 'info');
+
+                    // Check if messages data is available
+                    if (!this.messagesData) {
+                        throw new Error('נתוני הודעות מקומיות לא זמינים');
+                    }
+
+                    // Check if messages service is available
+                    if (!window.messagesService || !window.messagesService.isAvailable()) {
+                        throw new Error('שירות הודעות Firebase לא זמין');
+                    }
+
+                    // Migrate messages
+                    this.log('מעביר הודעות ל-Firebase...', 'info');
+                    const migratedCount = await window.messagesService.migrateMessagesFromJSON(configId, this.messagesData);
+                    
+                    this.log(`✓ הועברו ${migratedCount} הודעות בהצלחה`, 'success');
+                    this.log(`✓ ההודעות זמינות כעת תחת התצורה: ${configId}`, 'success');
+                    
+                    // Show next steps
+                    this.log('שלבים הבאים:', 'info');
+                    this.log('1. עדכן את התצורה לשימוש ב-firebase://messages', 'info');
+                    this.log('2. השתמש בעורך ההודעות לניהול ההודעות', 'info');
+                    
+                    this.updateStatus('העברה הושלמה בהצלחה', 'success');
+
+                } catch (error) {
+                    this.log(`✗ העברה נכשלה: ${error.message}`, 'error');
+                    this.updateStatus('העברה נכשלה', 'danger');
+                } finally {
+                    this.setButtonLoading(this.migrateBtn, false);
+                }
+            }
+
+            setButtonLoading(button, loading) {
+                const spinner = button.querySelector('.spinner-border');
+                if (loading) {
+                    button.disabled = true;
+                    spinner.classList.remove('d-none');
+                } else {
+                    button.disabled = false;
+                    spinner.classList.add('d-none');
+                }
+            }
+
+            escapeHtml(text) {
+                if (!text) return '';
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            new MessagesMigrator();
+        });
+    </script>
+</body>
+</html>

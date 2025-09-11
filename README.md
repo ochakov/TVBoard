@@ -15,9 +15,18 @@ A modern, responsive digital bulletin board web application built with vanilla J
 
 ## Quick Start
 
+### Local Configuration (Simple Setup)
 1. **Open the application**: Simply open `index.html` in a modern web browser
 2. **Configure components**: Edit `config.js` to customize the layout and content
 3. **Set up weather**: Add your OpenWeather API key in `config.js` for weather functionality
+
+### Firebase Configuration (Multi-Display Setup)
+1. **Set up Firebase**: Follow the instructions in `FIREBASE_SETUP.md` to configure Firebase Realtime Database
+2. **Upload configuration**: Use `upload-config.html` to upload your configuration with a unique ID
+3. **Open the application**: Open `index.html` and enter your configuration ID when prompted
+4. **Manage configurations**: Use `admin.html` to view and manage multiple configurations
+
+> **New Feature**: The application now supports multiple configurations stored in Firebase Realtime Database, allowing you to manage different bulletin board setups centrally with real-time updates.
 
 ## Configuration
 
@@ -158,11 +167,17 @@ This application works on all modern browsers including:
 ## File Structure
 
 ```
-├── index.html          # Main HTML file
-├── styles.css          # Custom CSS styles
-├── config.js           # Configuration file
-├── app.js             # Main JavaScript application
-└── README.md          # This file
+├── index.html              # Main HTML file
+├── styles.css              # Custom CSS styles
+├── config.js               # Local configuration file (fallback)
+├── app.js                  # Main JavaScript application
+├── firebase-config.js      # Firebase project configuration
+├── config-service.js       # Configuration loading service
+├── admin.html             # Configuration management interface
+├── upload-config.html     # Configuration upload tool
+├── test-firebase.html     # Firebase configuration testing tool
+├── FIREBASE_SETUP.md      # Firebase setup instructions
+└── README.md              # This file
 ```
 
 ## Deployment

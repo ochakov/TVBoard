@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>עורך הודעות - לוח מודעות דיגיטלי</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Heebo', sans-serif;
+        }
+        .message-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-right: 4px solid #007bff;
+        }
+        .message-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .message-date {
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+        .message-actions {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .message-card:hover .message-actions {
+            opacity: 1;
+        }
+        .config-selector {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .btn-floating {
+            position: fixed;
+            bottom: 2rem;
+            left: 2rem;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #6c757d;
+        }
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand">
+                <i class="fas fa-comments me-2"></i>
+                עורך הודעות
+            </span>
+            <div class="d-flex">
+                <button class="btn btn-outline-light btn-sm me-2" id="refreshBtn">
+                    <i class="fas fa-sync-alt me-1"></i>רענן
+                </button>
+                <button class="btn btn-outline-light btn-sm" onclick="window.open('admin.html', '_blank')">
+                    <i class="fas fa-cog me-1"></i>ניהול
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Configuration Selector -->
+        <div class="config-selector">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h4 class="mb-2">
+                        <i class="fas fa-server me-2"></i>
+                        בחירת תצורה
+                    </h4>
+                    <p class="mb-0">בחר את התצורה שברצונך לערוך את ההודעות שלה</p>
+                </div>
+                <div class="col-md-4">
+                    <select class="form-select" id="configSelect">
+                        <option value="">טוען תצורות...</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Status -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div id="connectionStatus" class="alert alert-info">
+                    <i class="fas fa-circle-notch fa-spin me-2"></i>מתחבר ל-Firebase...
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages List -->
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3>הודעות</h3>
+                    <button class="btn btn-primary" id="addMessageBtn" disabled>
+                        <i class="fas fa-plus me-2"></i>הוסף הודעה
+                    </button>
+                </div>
+                
+                <div id="messagesList">
+                    <div class="empty-state">
+                        <i class="fas fa-comments"></i>
+                        <h5>בחר תצורה כדי להתחיל</h5>
+                        <p>בחר תצורה מהרשימה למעלה כדי לראות ולערוך הודעות</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Message Modal -->
+    <div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="messageModalLabel">הוסף הודעה</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="messageForm">
+                        <div class="mb-3">
+                            <label for="messageTitle" class="form-label">כותרת ההודעה *</label>
+                            <input type="text" class="form-control" id="messageTitle" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="messageDescription" class="form-label">תוכן ההודעה *</label>
+                            <textarea class="form-control" id="messageDescription" rows="4" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="messagePubDate" class="form-label">תאריך פרסום</label>
+                            <input type="datetime-local" class="form-control" id="messagePubDate">
+                            <div class="form-text">השאר ריק לתאריך נוכחי</div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ביטול</button>
+                    <button type="button" class="btn btn-primary" id="saveMessageBtn">
+                        <span class="spinner-border spinner-border-sm me-2 d-none" role="status"></span>
+                        שמור
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Button -->
+    <button class="btn btn-primary btn-floating d-none" id="floatingAddBtn">
+        <i class="fas fa-plus"></i>
+    </button>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
+    <!-- Configuration files -->
+    <script src="firebase-config.js"></script>
+    <script src="messages-service.js"></script>
+
+    <script>
+        class MessagesEditor {
+            constructor() {
+                this.database = window.firebaseDatabase;
+                this.messagesService = window.messagesService;
+                this.currentConfigId = null;
+                this.currentEditingId = null;
+                this.configurations = new Map();
+                this.messagesListener = null;
+                
+                this.init();
+            }
+
+            init() {
+                if (!this.database || !this.messagesService) {
+                    this.showError('Firebase או שירות ההודעות לא זמינים. בדוק את ההגדרות.');
+                    return;
+                }
+
+                this.setupEventListeners();
+                this.checkConnection();
+                this.loadConfigurations();
+            }
+
+            setupEventListeners() {
+                // Configuration selector
+                document.getElementById('configSelect').addEventListener('change', (e) => {
+                    this.selectConfiguration(e.target.value);
+                });
+
+                // Add message buttons
+                document.getElementById('addMessageBtn').addEventListener('click', () => {
+                    this.showMessageModal();
+                });
+                
+                document.getElementById('floatingAddBtn').addEventListener('click', () => {
+                    this.showMessageModal();
+                });
+
+                // Save message
+                document.getElementById('saveMessageBtn').addEventListener('click', () => {
+                    this.saveMessage();
+                });
+
+                // Refresh button
+                document.getElementById('refreshBtn').addEventListener('click', () => {
+                    if (this.currentConfigId) {
+                        this.loadMessages();
+                    }
+                });
+
+                // Form validation
+                const form = document.getElementById('messageForm');
+                form.addEventListener('input', () => {
+                    this.validateForm();
+                });
+            }
+
+            checkConnection() {
+                const statusElement = document.getElementById('connectionStatus');
+                
+                this.database.ref('.info/connected').on('value', (snapshot) => {
+                    if (snapshot.val() === true) {
+                        statusElement.className = 'alert alert-success';
+                        statusElement.innerHTML = '<i class="fas fa-check-circle me-2"></i>מחובר ל-Firebase בהצלחה';
+                    } else {
+                        statusElement.className = 'alert alert-danger';
+                        statusElement.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i>לא מחובר ל-Firebase';
+                    }
+                });
+            }
+
+            async loadConfigurations() {
+                try {
+                    const snapshot = await this.database.ref('configurations').once('value');
+                    const configs = snapshot.val();
+                    
+                    const select = document.getElementById('configSelect');
+                    select.innerHTML = '<option value="">בחר תצורה...</option>';
+                    
+                    if (configs) {
+                        Object.keys(configs).forEach(configId => {
+                            const option = document.createElement('option');
+                            option.value = configId;
+                            option.textContent = configId;
+                            select.appendChild(option);
+                            
+                            this.configurations.set(configId, configs[configId]);
+                        });
+                        
+                        // Auto-select stored config if available
+                        const storedConfigId = localStorage.getItem('bulletinBoardConfigId');
+                        if (storedConfigId && configs[storedConfigId]) {
+                            select.value = storedConfigId;
+                            this.selectConfiguration(storedConfigId);
+                        }
+                    } else {
+                        select.innerHTML = '<option value="">לא נמצאו תצורות</option>';
+                    }
+                } catch (error) {
+                    console.error('Failed to load configurations:', error);
+                    this.showError('שגיאה בטעינת התצורות: ' + error.message);
+                }
+            }
+
+            selectConfiguration(configId) {
+                if (this.messagesListener) {
+                    this.messagesListener();
+                    this.messagesListener = null;
+                }
+
+                this.currentConfigId = configId;
+                
+                if (configId) {
+                    document.getElementById('addMessageBtn').disabled = false;
+                    document.getElementById('floatingAddBtn').classList.remove('d-none');
+                    this.loadMessages();
+                } else {
+                    document.getElementById('addMessageBtn').disabled = true;
+                    document.getElementById('floatingAddBtn').classList.add('d-none');
+                    this.showEmptyState();
+                }
+            }
+
+            async loadMessages() {
+                if (!this.currentConfigId) return;
+
+                const messagesList = document.getElementById('messagesList');
+                messagesList.innerHTML = `
+                    <div class="text-center p-4">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">טוען...</span>
+                        </div>
+                        <p class="mt-2">טוען הודעות...</p>
+                    </div>
+                `;
+
+                try {
+                    // Set up real-time listener
+                    this.messagesListener = this.messagesService.addMessagesListener(
+                        this.currentConfigId, 
+                        (messagesData) => {
+                            this.displayMessages(messagesData.items);
+                        }
+                    );
+                } catch (error) {
+                    console.error('Failed to load messages:', error);
+                    this.showError('שגיאה בטעינת ההודעות: ' + error.message);
+                }
+            }
+
+            displayMessages(messages) {
+                const messagesList = document.getElementById('messagesList');
+                
+                if (!messages || messages.length === 0) {
+                    messagesList.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-inbox"></i>
+                            <h5>אין הודעות</h5>
+                            <p>לחץ על "הוסף הודעה" כדי ליצור את ההודעה הראשונה</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const messagesHtml = messages.map(message => `
+                    <div class="card message-card mb-3">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <h5 class="card-title">${this.escapeHtml(message.title)}</h5>
+                                    <p class="card-text">${this.escapeHtml(message.description)}</p>
+                                    <small class="message-date">
+                                        <i class="fas fa-calendar me-1"></i>
+                                        ${new Date(message.pubDate).toLocaleDateString('he-IL')} 
+                                        ${new Date(message.pubDate).toLocaleTimeString('he-IL', {hour: '2-digit', minute: '2-digit'})}
+                                    </small>
+                                </div>
+                                <div class="message-actions">
+                                    <button class="btn btn-sm btn-outline-primary me-2" onclick="messagesEditor.editMessage('${message.id}')">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="messagesEditor.deleteMessage('${message.id}', '${this.escapeHtml(message.title)}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+
+                messagesList.innerHTML = messagesHtml;
+            }
+
+            showMessageModal(messageData = null) {
+                const modal = new bootstrap.Modal(document.getElementById('messageModal'));
+                const modalTitle = document.getElementById('messageModalLabel');
+                const form = document.getElementById('messageForm');
+                
+                if (messageData) {
+                    // Edit mode
+                    modalTitle.textContent = 'ערוך הודעה';
+                    this.currentEditingId = messageData.id;
+                    
+                    document.getElementById('messageTitle').value = messageData.title;
+                    document.getElementById('messageDescription').value = messageData.description;
+                    
+                    // Convert pubDate to datetime-local format
+                    const pubDate = new Date(messageData.pubDate);
+                    const localDateTime = new Date(pubDate.getTime() - pubDate.getTimezoneOffset() * 60000)
+                        .toISOString().slice(0, 16);
+                    document.getElementById('messagePubDate').value = localDateTime;
+                } else {
+                    // Add mode
+                    modalTitle.textContent = 'הוסף הודעה';
+                    this.currentEditingId = null;
+                    form.reset();
+                    
+                    // Set current date/time
+                    const now = new Date();
+                    const localDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+                        .toISOString().slice(0, 16);
+                    document.getElementById('messagePubDate').value = localDateTime;
+                }
+                
+                this.validateForm();
+                modal.show();
+            }
+
+            async saveMessage() {
+                if (!this.validateForm()) return;
+
+                const saveBtn = document.getElementById('saveMessageBtn');
+                const spinner = saveBtn.querySelector('.spinner-border');
+                
+                saveBtn.disabled = true;
+                spinner.classList.remove('d-none');
+
+                try {
+                    const title = document.getElementById('messageTitle').value.trim();
+                    const description = document.getElementById('messageDescription').value.trim();
+                    const pubDateInput = document.getElementById('messagePubDate').value;
+                    
+                    // Convert datetime-local to proper format
+                    const pubDate = pubDateInput ? 
+                        new Date(pubDateInput).toISOString().replace('T', ' ').substring(0, 19) :
+                        new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+                    const messageData = { title, description, pubDate };
+
+                    if (this.currentEditingId) {
+                        // Update existing message
+                        await this.messagesService.updateMessage(this.currentConfigId, this.currentEditingId, messageData);
+                    } else {
+                        // Add new message
+                        await this.messagesService.addMessage(this.currentConfigId, messageData);
+                    }
+
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('messageModal'));
+                    modal.hide();
+
+                    // Show success message
+                    this.showSuccess(this.currentEditingId ? 'ההודעה עודכנה בהצלחה' : 'ההודעה נוספה בהצלחה');
+
+                } catch (error) {
+                    console.error('Failed to save message:', error);
+                    this.showError('שגיאה בשמירת ההודעה: ' + error.message);
+                } finally {
+                    saveBtn.disabled = false;
+                    spinner.classList.add('d-none');
+                }
+            }
+
+            async editMessage(messageId) {
+                try {
+                    const messagesData = await this.messagesService.getMessages(this.currentConfigId);
+                    const message = messagesData.items.find(item => item.id === messageId);
+                    
+                    if (message) {
+                        this.showMessageModal(message);
+                    } else {
+                        this.showError('ההודעה לא נמצאה');
+                    }
+                } catch (error) {
+                    console.error('Failed to load message for editing:', error);
+                    this.showError('שגיאה בטעינת ההודעה לעריכה: ' + error.message);
+                }
+            }
+
+            async deleteMessage(messageId, messageTitle) {
+                if (!confirm(`האם אתה בטוח שברצונך למחוק את ההודעה "${messageTitle}"?`)) {
+                    return;
+                }
+
+                try {
+                    await this.messagesService.deleteMessage(this.currentConfigId, messageId);
+                    this.showSuccess('ההודעה נמחקה בהצלחה');
+                } catch (error) {
+                    console.error('Failed to delete message:', error);
+                    this.showError('שגיאה במחיקת ההודעה: ' + error.message);
+                }
+            }
+
+            validateForm() {
+                const title = document.getElementById('messageTitle').value.trim();
+                const description = document.getElementById('messageDescription').value.trim();
+                const saveBtn = document.getElementById('saveMessageBtn');
+                
+                const isValid = title && description;
+                saveBtn.disabled = !isValid;
+                
+                return isValid;
+            }
+
+            showEmptyState() {
+                const messagesList = document.getElementById('messagesList');
+                messagesList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-comments"></i>
+                        <h5>בחר תצורה כדי להתחיל</h5>
+                        <p>בחר תצורה מהרשימה למעלה כדי לראות ולערוך הודעות</p>
+                    </div>
+                `;
+            }
+
+            showError(message) {
+                // You can implement a toast notification system here
+                alert('שגיאה: ' + message);
+            }
+
+            showSuccess(message) {
+                // You can implement a toast notification system here
+                console.log('Success: ' + message);
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            window.messagesEditor = new MessagesEditor();
+        });
+    </script>
+</body>
+</html>
