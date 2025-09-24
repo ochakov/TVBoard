@@ -10,6 +10,9 @@ class ConfigService {
         this.configLoadPromise = null;
         this.listeners = new Set();
         this.configId = null;
+        this.configCheckInterval = null;
+        this.lastConfigHash = null;
+        this.isUsingFirebaseConfig = false;
 
         // Check if Firebase is available
         this.isFirebaseEnabled = window.firebaseDatabase !== null && window.firebaseDatabase !== undefined;
@@ -209,11 +212,14 @@ class ConfigService {
                 this.configId = storedId;
                 await this._loadFromFirebase(storedId);
                 console.log('Configuration loaded from Firebase successfully');
+                this.isUsingFirebaseConfig = true;
                 this._setupFirebaseListeners(storedId);
+                this._startConfigMonitoring();
                 return;
             } else if (hasChoiceMade) {
                 // User previously chose local config
                 console.log('Using local configuration (user choice)');
+                this.isUsingFirebaseConfig = false;
                 this._loadFromLocal();
                 return;
             } else if (this.isFirebaseEnabled) {
@@ -223,7 +229,9 @@ class ConfigService {
                     console.log(`Attempting to load configuration from Firebase with ID: ${configId}`);
                     await this._loadFromFirebase(configId);
                     console.log('Configuration loaded from Firebase successfully');
+                    this.isUsingFirebaseConfig = true;
                     this._setupFirebaseListeners(configId);
+                    this._startConfigMonitoring();
                     return;
                 } else {
                     // User chose local config
@@ -237,6 +245,7 @@ class ConfigService {
 
         // Use local configuration
         console.log('Loading configuration from local config.js...');
+        this.isUsingFirebaseConfig = false;
         this._loadFromLocal();
         console.log('Configuration loaded from local config.js');
     }
@@ -306,12 +315,15 @@ class ConfigService {
         this.config = results.config;
         this.translations = results.translations;
         this.sizeConfig = results.sizeConfig;
+
+        // Calculate and store config hash for change detection
+        this._updateConfigHash();
     }
 
     _loadFromLocal() {
         // Use the global variables from config.js
-        if (typeof BULLETIN_CONFIG === 'undefined' || 
-            typeof TRANSLATIONS === 'undefined' || 
+        if (typeof BULLETIN_CONFIG === 'undefined' ||
+            typeof TRANSLATIONS === 'undefined' ||
             typeof SIZE_CONFIG === 'undefined') {
             throw new Error('Local configuration not available');
         }
@@ -319,6 +331,9 @@ class ConfigService {
         this.config = BULLETIN_CONFIG;
         this.translations = TRANSLATIONS;
         this.sizeConfig = SIZE_CONFIG;
+
+        // Calculate and store config hash for change detection
+        this._updateConfigHash();
     }
 
     _setupFirebaseListeners(configId) {
@@ -464,6 +479,126 @@ class ConfigService {
                 }
             });
         });
+    }
+
+    // Start monitoring for config changes (only for Firebase configs)
+    _startConfigMonitoring() {
+        if (!this.isUsingFirebaseConfig || !this.isFirebaseEnabled) {
+            console.log('Config monitoring not started - not using Firebase config');
+            return;
+        }
+
+        console.log('Starting config monitoring - checking every minute for changes');
+
+        // Clear any existing interval
+        if (this.configCheckInterval) {
+            clearInterval(this.configCheckInterval);
+        }
+
+        // Check for config changes every minute (60000ms)
+        this.configCheckInterval = setInterval(() => {
+            this._checkForConfigChanges();
+        }, 60000);
+    }
+
+    // Stop config monitoring
+    _stopConfigMonitoring() {
+        if (this.configCheckInterval) {
+            clearInterval(this.configCheckInterval);
+            this.configCheckInterval = null;
+            console.log('Config monitoring stopped');
+        }
+    }
+
+    // Check for remote config changes
+    async _checkForConfigChanges() {
+        if (!this.isUsingFirebaseConfig || !this.configId) {
+            return;
+        }
+
+        try {
+            console.log('Checking for remote config changes...');
+
+            const database = window.firebaseDatabase;
+            if (!database) {
+                console.warn('Firebase database not available for config check');
+                return;
+            }
+
+            // Fetch current config from Firebase
+            const configRef = database.ref(`configurations/${this.configId}`);
+            const snapshot = await configRef.once('value');
+            const remoteData = snapshot.val();
+
+            if (!remoteData) {
+                console.warn('Remote config not found');
+                return;
+            }
+
+            // Calculate hash of remote config
+            const remoteHash = this._calculateConfigHash({
+                config: remoteData.bulletinConfig,
+                translations: remoteData.translations,
+                sizeConfig: remoteData.sizeConfig
+            });
+
+            // Compare with current hash
+            if (remoteHash !== this.lastConfigHash) {
+                console.log('🔄 Remote config has changed! Reloading page...');
+                console.log('Previous hash:', this.lastConfigHash);
+                console.log('New hash:', remoteHash);
+
+                // Store the fact that we're reloading due to config change
+                sessionStorage.setItem('configChangeReload', 'true');
+
+                // Reload the page to get the new config
+                window.location.reload();
+            } else {
+                console.log('✅ Remote config unchanged');
+            }
+        } catch (error) {
+            console.error('Error checking for config changes:', error);
+        }
+    }
+
+    // Calculate hash of config for change detection
+    _calculateConfigHash(configData) {
+        const data = configData || {
+            config: this.config,
+            translations: this.translations,
+            sizeConfig: this.sizeConfig
+        };
+
+        // Create a stable string representation of the config
+        const configString = JSON.stringify(data, Object.keys(data).sort());
+
+        // Simple hash function (djb2)
+        let hash = 5381;
+        for (let i = 0; i < configString.length; i++) {
+            hash = ((hash << 5) + hash) + configString.charCodeAt(i);
+        }
+        return hash.toString();
+    }
+
+    // Update the stored config hash
+    _updateConfigHash() {
+        this.lastConfigHash = this._calculateConfigHash();
+        console.log('Config hash updated:', this.lastConfigHash);
+    }
+
+    // Check if page was reloaded due to config change
+    wasReloadedForConfigChange() {
+        const wasReloaded = sessionStorage.getItem('configChangeReload') === 'true';
+        if (wasReloaded) {
+            sessionStorage.removeItem('configChangeReload');
+        }
+        return wasReloaded;
+    }
+
+    // Cleanup method
+    destroy() {
+        this._stopConfigMonitoring();
+        this.listeners.clear();
     }
 }
 

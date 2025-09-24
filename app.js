@@ -14,6 +14,9 @@ class BulletinBoard {
 
     async init() {
         try {
+            // Check if page was reloaded due to config change
+            this.checkConfigChangeReload();
+
             // Load configuration first
             await this.loadConfiguration();
 
@@ -28,6 +31,7 @@ class BulletinBoard {
             this.registerServiceWorker();
             this.setupFullscreen();
             this.setupConfigChangeListener();
+            this.setupPageUnloadCleanup();
 
             this.isInitialized = true;
             console.log('BulletinBoard initialized successfully');
@@ -72,6 +76,75 @@ class BulletinBoard {
                     this.sizeConfig = data;
                     this.reloadComponents();
                     break;
+            }
+        });
+    }
+
+    // Check if page was reloaded due to config change and show notification
+    checkConfigChangeReload() {
+        if (this.configService.wasReloadedForConfigChange()) {
+            console.log('🔄 Page was reloaded due to remote config change');
+
+            // Show a temporary notification
+            this.showConfigChangeNotification();
+        }
+    }
+
+    // Show notification that config was updated
+    showConfigChangeNotification() {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-info alert-dismissible fade show position-fixed';
+        notification.style.cssText = `
+            top: 80px;
+            right: 20px;
+            z-index: 9999;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+
+        notification.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="fas fa-sync-alt text-info me-2"></i>
+                <div>
+                    <strong>תצורה עודכנה</strong><br>
+                    <small>הדף נטען מחדש עם התצורה החדשה</small>
+                </div>
+                <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+
+        // Add to page
+        document.body.appendChild(notification);
+
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 5000);
+    }
+
+    // Setup cleanup when page unloads
+    setupPageUnloadCleanup() {
+        window.addEventListener('beforeunload', () => {
+            // Cleanup config service monitoring
+            if (this.configService && typeof this.configService.destroy === 'function') {
+                this.configService.destroy();
+            }
+
+            // Cleanup any retry timers
+            this.cleanupAllRetryTimers();
+        });
+
+        // Also cleanup on visibility change (when tab becomes hidden)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Page is now hidden, could cleanup some resources
+                console.log('Page hidden - config monitoring continues');
+            } else {
+                // Page is now visible again
+                console.log('Page visible again');
             }
         });
     }
