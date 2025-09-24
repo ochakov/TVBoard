@@ -161,6 +161,86 @@ class BulletinBoard {
         }
     }
 
+    // Video Cache Management Functions
+    async sendMessageToServiceWorker(message) {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            return new Promise((resolve, reject) => {
+                const messageChannel = new MessageChannel();
+                messageChannel.port1.onmessage = (event) => {
+                    if (event.data.success) {
+                        resolve(event.data);
+                    } else {
+                        reject(new Error(event.data.error || 'Service worker message failed'));
+                    }
+                };
+
+                navigator.serviceWorker.controller.postMessage(message, [messageChannel.port2]);
+            });
+        } else {
+            throw new Error('Service worker not available');
+        }
+    }
+
+    async getVideoCacheStatus() {
+        try {
+            const result = await this.sendMessageToServiceWorker({ type: 'GET_VIDEO_CACHE_STATUS' });
+            console.log('Video cache status:', result);
+            return result;
+        } catch (error) {
+            console.error('Failed to get video cache status:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async cleanupVideoCache() {
+        try {
+            const result = await this.sendMessageToServiceWorker({ type: 'CLEANUP_VIDEO_CACHE' });
+            console.log('Video cache cleanup completed');
+            return result;
+        } catch (error) {
+            console.error('Failed to cleanup video cache:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async clearVideoCache() {
+        try {
+            const result = await this.sendMessageToServiceWorker({ type: 'CLEAR_VIDEO_CACHE' });
+            console.log('Video cache cleared');
+            return result;
+        } catch (error) {
+            console.error('Failed to clear video cache:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // Test video caching by making a direct fetch request
+    async testVideoCache() {
+        try {
+            const testVideoUrl = 'https://devisrael.z39.web.core.windows.net/files/mp4/CalmHeb1.mp4';
+            console.log('Testing video cache with URL:', testVideoUrl);
+
+            // Make a fetch request that should be intercepted by the service worker
+            const response = await fetch(testVideoUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'video/mp4,video/*'
+                }
+            });
+
+            console.log('Video fetch response:', {
+                status: response.status,
+                headers: Object.fromEntries(response.headers.entries()),
+                url: response.url
+            });
+
+            return response.ok;
+        } catch (error) {
+            console.error('Video cache test failed:', error);
+            return false;
+        }
+    }
+
     // Fullscreen Setup
     setupFullscreen() {
         // Request fullscreen on user interaction
@@ -420,14 +500,14 @@ class BulletinBoard {
     async loadComponentContent(componentConfig) {
         // Try to find the content element, with retry mechanism
         let contentElement = document.getElementById(`content-${componentConfig.id}`);
-        
+
         if (!contentElement) {
             console.warn(`Content element not found for component: ${componentConfig.id}, retrying...`);
             // Wait a bit and try again
             await new Promise(resolve => setTimeout(resolve, 200));
             contentElement = document.getElementById(`content-${componentConfig.id}`);
         }
-        
+
         if (!contentElement) {
             console.error(`Content element still not found for component: ${componentConfig.id} after retry`);
             return;
@@ -435,7 +515,10 @@ class BulletinBoard {
 
         try {
             console.log(`Loading component: ${componentConfig.id} (${componentConfig.type})`);
-            
+
+            // Clean up any existing retry timers for this component
+            this.cleanupComponentRetryTimers(contentElement);
+
             switch (componentConfig.type) {
                 case 'image':
                     await this.loadImageComponent(componentConfig, contentElement);
@@ -459,6 +542,24 @@ class BulletinBoard {
                 contentElement.innerHTML = `<div class="error-message">Failed to load content<br><small>${error.message}</small></div>`;
             }
         }
+    }
+
+    // Clean up retry timers for a component
+    cleanupComponentRetryTimers(element) {
+        if (element.videoRetryInfo && element.videoRetryInfo.retryTimer) {
+            console.log('Cleaning up video retry timer');
+            clearTimeout(element.videoRetryInfo.retryTimer);
+            element.videoRetryInfo.retryTimer = null;
+        }
+    }
+
+    // Clean up all retry timers (called on page unload)
+    cleanupAllRetryTimers() {
+        console.log('Cleaning up all retry timers');
+        const contentElements = document.querySelectorAll('[id^="content-"]');
+        contentElements.forEach(element => {
+            this.cleanupComponentRetryTimers(element);
+        });
     }
 
     async loadImageComponent(config, element) {
@@ -604,6 +705,28 @@ class BulletinBoard {
     }
 
     async loadVideoComponent(config, element) {
+        // Store retry information
+        if (!element.videoRetryInfo) {
+            element.videoRetryInfo = {
+                retryCount: 0,
+                maxRetries: 10, // Maximum number of retries
+                retryInterval: 60000, // 1 minute in milliseconds
+                retryTimer: null,
+                currentIndex: config.config.randomizeStart ?
+                    Math.floor(Math.random() * config.config.videoUrls.length) : 0
+            };
+        }
+
+        const retryInfo = element.videoRetryInfo;
+
+        // Clear any existing retry timer
+        if (retryInfo.retryTimer) {
+            clearTimeout(retryInfo.retryTimer);
+            retryInfo.retryTimer = null;
+        }
+
+        console.log(`Loading video component (attempt ${retryInfo.retryCount + 1}):`, config.id);
+
         const video = document.createElement('video');
         video.controls = true;
         video.autoplay = config.config.autoplay;
@@ -611,26 +734,29 @@ class BulletinBoard {
         video.className = 'video-component';
 
         // Add timeout for video loading
-        const timeout = setTimeout(() => {
-            if (element.querySelector('.loading')) {
-                element.innerHTML = `<div class="error-message">${this.getTranslation('timeoutError')} - ${this.getTranslation('videoError')}</div>`;
-            }
+        const loadingTimeout = setTimeout(() => {
+            console.log('Video loading timeout reached');
+            this.handleVideoError(config, element, 'Loading timeout');
         }, 20000); // 20 second timeout for videos
+
+        // Function to handle video errors and retry logic
+        const handleVideoError = (errorMessage) => {
+            clearTimeout(loadingTimeout);
+            console.error(`Video loading failed for ${config.id}:`, errorMessage);
+            this.handleVideoError(config, element, errorMessage);
+        };
 
         // Set up video source rotation if multiple URLs
         if (config.config.videoUrls.length > 1) {
-            // Randomize the initial video selection if enabled
-            let currentIndex = config.config.randomizeStart ?
-                Math.floor(Math.random() * config.config.videoUrls.length) : 0;
-            video.src = config.config.videoUrls[currentIndex];
+            video.src = config.config.videoUrls[retryInfo.currentIndex];
             video.loop = false; // Disable loop when cycling through multiple videos
 
             video.addEventListener('ended', () => {
-                currentIndex = (currentIndex + 1) % config.config.videoUrls.length;
-                video.src = config.config.videoUrls[currentIndex];
+                retryInfo.currentIndex = (retryInfo.currentIndex + 1) % config.config.videoUrls.length;
+                video.src = config.config.videoUrls[retryInfo.currentIndex];
                 video.load();
                 if (config.config.autoplay) {
-                    video.play();
+                    video.play().catch(e => console.log('Autoplay failed:', e));
                 }
             });
         } else {
@@ -638,18 +764,36 @@ class BulletinBoard {
             video.loop = config.config.loop; // Only loop if there's a single video
         }
 
+        // Success handlers
         video.onloadstart = () => {
-            clearTimeout(timeout);
-        };
-
-        video.onerror = (error) => {
-            clearTimeout(timeout);
-            console.error('Video loading failed:', config.config.videoUrls, error);
-            element.innerHTML = `<div class="error-message">${this.getTranslation('videoError')}<br><small>URL: ${config.config.videoUrls[0]}</small></div>`;
+            clearTimeout(loadingTimeout);
+            console.log(`Video load started successfully for ${config.id}`);
+            // Reset retry count on successful load start
+            retryInfo.retryCount = 0;
         };
 
         video.oncanplay = () => {
-            clearTimeout(timeout);
+            clearTimeout(loadingTimeout);
+            console.log(`Video can play for ${config.id}`);
+        };
+
+        // Error handlers
+        video.onerror = (error) => {
+            const errorMsg = `Video element error: ${error.target?.error?.message || 'Unknown error'}`;
+            handleVideoError(errorMsg);
+        };
+
+        video.onabort = () => {
+            handleVideoError('Video loading aborted');
+        };
+
+        video.onstalled = () => {
+            console.warn(`Video stalled for ${config.id}, will retry if it doesn't recover`);
+            setTimeout(() => {
+                if (video.readyState < 3) { // HAVE_FUTURE_DATA
+                    handleVideoError('Video stalled and did not recover');
+                }
+            }, 10000); // Give it 10 seconds to recover from stall
         };
 
         // Add random starting position when video metadata is loaded
@@ -668,6 +812,56 @@ class BulletinBoard {
 
         element.innerHTML = '';
         element.appendChild(video);
+    }
+
+    // Handle video errors with retry logic
+    handleVideoError(config, element, errorMessage) {
+        const retryInfo = element.videoRetryInfo;
+
+        if (!retryInfo) {
+            console.error('No retry info available for video component');
+            return;
+        }
+
+        retryInfo.retryCount++;
+
+        console.log(`Video error for ${config.id}: ${errorMessage} (retry ${retryInfo.retryCount}/${retryInfo.maxRetries})`);
+
+        // Show error message with retry information
+        const nextRetryTime = new Date(Date.now() + retryInfo.retryInterval);
+        const timeString = nextRetryTime.toLocaleTimeString();
+
+        element.innerHTML = `
+            <div class="error-message">
+                ${this.getTranslation('videoError')}<br>
+                <small>
+                    ${errorMessage}<br>
+                    Retry ${retryInfo.retryCount}/${retryInfo.maxRetries}<br>
+                    Next attempt: ${timeString}
+                </small>
+            </div>
+        `;
+
+        // Schedule retry if we haven't exceeded max retries
+        if (retryInfo.retryCount < retryInfo.maxRetries) {
+            console.log(`Scheduling video retry for ${config.id} in ${retryInfo.retryInterval / 1000} seconds`);
+
+            retryInfo.retryTimer = setTimeout(() => {
+                console.log(`Retrying video load for ${config.id}`);
+                this.loadVideoComponent(config, element);
+            }, retryInfo.retryInterval);
+        } else {
+            console.error(`Max retries (${retryInfo.maxRetries}) reached for video ${config.id}, giving up`);
+            element.innerHTML = `
+                <div class="error-message">
+                    ${this.getTranslation('videoError')}<br>
+                    <small>
+                        ${errorMessage}<br>
+                        Max retries reached (${retryInfo.maxRetries})
+                    </small>
+                </div>
+            `;
+        }
     }
 
     async loadTextComponent(config, element) {
@@ -833,9 +1027,24 @@ class BulletinBoard {
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        const app = new BulletinBoard();
+        window.bulletinBoard = new BulletinBoard();
         // The initialization is now handled asynchronously within the constructor
     } catch (error) {
         console.error('Failed to initialize application:', error);
+    }
+});
+
+// Clean up retry timers when page is about to unload
+window.addEventListener('beforeunload', () => {
+    if (window.bulletinBoard) {
+        window.bulletinBoard.cleanupAllRetryTimers();
+    }
+});
+
+// Also clean up on page visibility change (when tab becomes hidden)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden && window.bulletinBoard) {
+        console.log('Page hidden, cleaning up retry timers');
+        window.bulletinBoard.cleanupAllRetryTimers();
     }
 });

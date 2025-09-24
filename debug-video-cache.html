@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Video Cache</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .log { background: #f5f5f5; padding: 10px; margin: 10px 0; font-family: monospace; white-space: pre-wrap; }
+        button { margin: 5px; padding: 10px; }
+        video { width: 100%; max-width: 400px; }
+    </style>
+</head>
+<body>
+    <h1>Debug Video Cache</h1>
+    
+    <div class="test-section">
+        <h3>Service Worker Status</h3>
+        <button onclick="checkServiceWorker()">Check Service Worker</button>
+        <div id="sw-status" class="log">Click button to check...</div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Direct Video Fetch Test</h3>
+        <button onclick="testVideoFetch()">Test Video Fetch</button>
+        <div id="fetch-log" class="log">Click button to test...</div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Video Element Test</h3>
+        <button onclick="loadVideoElement()">Load Video Element</button>
+        <button onclick="clearVideoElement()">Clear Video</button>
+        <div id="video-container"></div>
+        <div id="video-log" class="log">Click button to test...</div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Cache Status</h3>
+        <button onclick="getCacheStatus()">Get Cache Status</button>
+        <button onclick="clearAllCaches()">Clear All Caches</button>
+        <div id="cache-log" class="log">Click button to check...</div>
+    </div>
+
+    <script>
+        const testVideoUrl = 'https://devisrael.z39.web.core.windows.net/files/mp4/CalmHeb1.mp4';
+        
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('SW registered:', registration);
+                })
+                .catch(error => {
+                    console.error('SW registration failed:', error);
+                });
+        }
+        
+        function log(elementId, message) {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            element.textContent += `[${timestamp}] ${message}\n`;
+        }
+        
+        async function checkServiceWorker() {
+            const statusEl = document.getElementById('sw-status');
+            statusEl.textContent = '';
+            
+            if (!('serviceWorker' in navigator)) {
+                log('sw-status', 'Service workers not supported');
+                return;
+            }
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (!registration) {
+                    log('sw-status', 'No service worker registered');
+                    return;
+                }
+                
+                log('sw-status', `Registration scope: ${registration.scope}`);
+                log('sw-status', `Installing: ${!!registration.installing}`);
+                log('sw-status', `Waiting: ${!!registration.waiting}`);
+                log('sw-status', `Active: ${!!registration.active}`);
+                log('sw-status', `Controller: ${!!navigator.serviceWorker.controller}`);
+                
+                if (navigator.serviceWorker.controller) {
+                    log('sw-status', '✅ Service worker is controlling this page');
+                } else {
+                    log('sw-status', '❌ Service worker is NOT controlling this page');
+                }
+            } catch (error) {
+                log('sw-status', `Error: ${error.message}`);
+            }
+        }
+        
+        async function testVideoFetch() {
+            const logEl = document.getElementById('fetch-log');
+            logEl.textContent = '';
+            
+            log('fetch-log', `Testing fetch for: ${testVideoUrl}`);
+            
+            try {
+                const startTime = Date.now();
+                const response = await fetch(testVideoUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'video/mp4,video/*'
+                    }
+                });
+                const endTime = Date.now();
+                
+                log('fetch-log', `Response status: ${response.status}`);
+                log('fetch-log', `Response time: ${endTime - startTime}ms`);
+                log('fetch-log', `Content-Type: ${response.headers.get('Content-Type')}`);
+                log('fetch-log', `Content-Length: ${response.headers.get('Content-Length')}`);
+                log('fetch-log', `Cache-Control: ${response.headers.get('Cache-Control')}`);
+                
+                if (response.ok) {
+                    log('fetch-log', '✅ Fetch successful');
+                } else {
+                    log('fetch-log', '❌ Fetch failed');
+                }
+            } catch (error) {
+                log('fetch-log', `❌ Fetch error: ${error.message}`);
+            }
+        }
+        
+        function loadVideoElement() {
+            const container = document.getElementById('video-container');
+            const logEl = document.getElementById('video-log');
+            logEl.textContent = '';
+            
+            log('video-log', 'Creating video element...');
+            
+            const video = document.createElement('video');
+            video.controls = true;
+            video.preload = 'metadata';
+            video.style.width = '100%';
+            video.style.maxWidth = '400px';
+            
+            video.addEventListener('loadstart', () => {
+                log('video-log', '📹 Video loadstart event');
+            });
+            
+            video.addEventListener('loadedmetadata', () => {
+                log('video-log', '📹 Video metadata loaded');
+            });
+            
+            video.addEventListener('canplay', () => {
+                log('video-log', '📹 Video can play');
+            });
+            
+            video.addEventListener('error', (e) => {
+                log('video-log', `❌ Video error: ${e.message || 'Unknown error'}`);
+            });
+            
+            container.innerHTML = '';
+            container.appendChild(video);
+            
+            log('video-log', `Setting video source: ${testVideoUrl}`);
+            video.src = testVideoUrl;
+        }
+        
+        function clearVideoElement() {
+            document.getElementById('video-container').innerHTML = '';
+            log('video-log', 'Video element cleared');
+        }
+        
+        async function getCacheStatus() {
+            const logEl = document.getElementById('cache-log');
+            logEl.textContent = '';
+            
+            try {
+                const cacheNames = await caches.keys();
+                log('cache-log', `Found ${cacheNames.length} caches:`);
+                
+                for (const cacheName of cacheNames) {
+                    const cache = await caches.open(cacheName);
+                    const requests = await cache.keys();
+                    log('cache-log', `  ${cacheName}: ${requests.length} items`);
+                    
+                    for (const request of requests) {
+                        if (request.url.includes('.mp4')) {
+                            log('cache-log', `    📹 ${request.url}`);
+                        }
+                    }
+                }
+            } catch (error) {
+                log('cache-log', `❌ Error: ${error.message}`);
+            }
+        }
+        
+        async function clearAllCaches() {
+            const logEl = document.getElementById('cache-log');
+            
+            try {
+                const cacheNames = await caches.keys();
+                log('cache-log', `Clearing ${cacheNames.length} caches...`);
+                
+                for (const cacheName of cacheNames) {
+                    await caches.delete(cacheName);
+                    log('cache-log', `  Deleted: ${cacheName}`);
+                }
+                
+                log('cache-log', '✅ All caches cleared');
+            } catch (error) {
+                log('cache-log', `❌ Error: ${error.message}`);
+            }
+        }
+        
+        // Auto-check service worker on load
+        setTimeout(checkServiceWorker, 1000);
+    </script>
+</body>
+</html>

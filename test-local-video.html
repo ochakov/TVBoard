@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Video Cache Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .log { background: #f5f5f5; padding: 10px; margin: 10px 0; font-family: monospace; white-space: pre-wrap; }
+        button { margin: 5px; padding: 10px; }
+        video { width: 100%; max-width: 400px; }
+        .info { background: #e7f3ff; padding: 10px; margin: 10px 0; border-left: 4px solid #2196F3; }
+        .warning { background: #fff3cd; padding: 10px; margin: 10px 0; border-left: 4px solid #ffc107; }
+    </style>
+</head>
+<body>
+    <h1>Local Video Cache Test</h1>
+    
+    <div class="info">
+        <strong>Note:</strong> This test demonstrates video caching with local files. 
+        The external videos from devisrael.z39.web.core.windows.net cannot be cached due to CORS restrictions.
+    </div>
+    
+    <div class="warning">
+        <strong>CORS Issue Explanation:</strong><br>
+        The videos at <code>https://devisrael.z39.web.core.windows.net/files/mp4/</code> don't include 
+        <code>Access-Control-Allow-Origin</code> headers, which prevents the service worker from caching them.
+        <br><br>
+        <strong>Solutions:</strong>
+        <ul>
+            <li>Host videos locally in your <code>files/</code> directory</li>
+            <li>Configure the video server to include CORS headers</li>
+            <li>Use a proxy server to serve videos with proper headers</li>
+        </ul>
+    </div>
+    
+    <div class="section">
+        <h3>Service Worker Status</h3>
+        <button onclick="checkServiceWorker()">Check Service Worker</button>
+        <div id="sw-status" class="log">Click button to check...</div>
+    </div>
+    
+    <div class="section">
+        <h3>Test External Video (Will Show CORS Error)</h3>
+        <button onclick="testExternalVideo()">Test External Video</button>
+        <div id="external-log" class="log">Click button to test...</div>
+    </div>
+    
+    <div class="section">
+        <h3>Test Local Video (Would Work if File Exists)</h3>
+        <button onclick="testLocalVideo()">Test Local Video</button>
+        <div id="local-log" class="log">Click button to test...</div>
+    </div>
+    
+    <div class="section">
+        <h3>Cache Status</h3>
+        <button onclick="getCacheStatus()">Get Cache Status</button>
+        <div id="cache-log" class="log">Click button to check...</div>
+    </div>
+    
+    <div class="section">
+        <h3>Recommendations</h3>
+        <div class="info">
+            <strong>To enable video caching in your application:</strong>
+            <ol>
+                <li>Download the videos from <code>https://devisrael.z39.web.core.windows.net/files/mp4/</code></li>
+                <li>Place them in your local <code>files/videos/</code> directory</li>
+                <li>Update <code>config.js</code> to use local paths:
+                    <pre>videoUrls: [
+    'files/videos/CalmHeb1.mp4',
+    'files/videos/Shlomo1.mp4',
+    // etc...
+]</pre>
+                </li>
+                <li>The service worker will then be able to cache these local videos</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const externalVideoUrl = 'https://devisrael.z39.web.core.windows.net/files/mp4/CalmHeb1.mp4';
+        const localVideoUrl = 'files/videos/test-video.mp4'; // This would need to exist
+        
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('SW registered:', registration);
+                })
+                .catch(error => {
+                    console.error('SW registration failed:', error);
+                });
+        }
+        
+        function log(elementId, message) {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            element.textContent += `[${timestamp}] ${message}\n`;
+        }
+        
+        async function checkServiceWorker() {
+            const statusEl = document.getElementById('sw-status');
+            statusEl.textContent = '';
+            
+            if (!('serviceWorker' in navigator)) {
+                log('sw-status', 'Service workers not supported');
+                return;
+            }
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (!registration) {
+                    log('sw-status', 'No service worker registered');
+                    return;
+                }
+                
+                log('sw-status', `Registration scope: ${registration.scope}`);
+                log('sw-status', `Active: ${!!registration.active}`);
+                log('sw-status', `Controller: ${!!navigator.serviceWorker.controller}`);
+                
+                if (navigator.serviceWorker.controller) {
+                    log('sw-status', '✅ Service worker is controlling this page');
+                } else {
+                    log('sw-status', '❌ Service worker is NOT controlling this page');
+                }
+            } catch (error) {
+                log('sw-status', `Error: ${error.message}`);
+            }
+        }
+        
+        async function testExternalVideo() {
+            const logEl = document.getElementById('external-log');
+            logEl.textContent = '';
+            
+            log('external-log', `Testing external video: ${externalVideoUrl}`);
+            log('external-log', 'This should show a CORS error...');
+            
+            try {
+                const response = await fetch(externalVideoUrl);
+                log('external-log', `✅ Unexpected success! Status: ${response.status}`);
+            } catch (error) {
+                log('external-log', `❌ Expected CORS error: ${error.message}`);
+                log('external-log', 'This is why the service worker cannot cache external videos');
+            }
+        }
+        
+        async function testLocalVideo() {
+            const logEl = document.getElementById('local-log');
+            logEl.textContent = '';
+            
+            log('local-log', `Testing local video: ${localVideoUrl}`);
+            log('local-log', 'This would work if the file existed locally...');
+            
+            try {
+                const response = await fetch(localVideoUrl);
+                if (response.ok) {
+                    log('local-log', `✅ Local video accessible! Status: ${response.status}`);
+                    log('local-log', 'Service worker would be able to cache this');
+                } else {
+                    log('local-log', `❌ Local video not found: ${response.status}`);
+                    log('local-log', 'Create files/videos/ directory and add video files');
+                }
+            } catch (error) {
+                log('local-log', `❌ Local video error: ${error.message}`);
+                log('local-log', 'This is expected if the file does not exist');
+            }
+        }
+        
+        async function getCacheStatus() {
+            const logEl = document.getElementById('cache-log');
+            logEl.textContent = '';
+            
+            try {
+                const cacheNames = await caches.keys();
+                log('cache-log', `Found ${cacheNames.length} caches:`);
+                
+                for (const cacheName of cacheNames) {
+                    const cache = await caches.open(cacheName);
+                    const requests = await cache.keys();
+                    log('cache-log', `  ${cacheName}: ${requests.length} items`);
+                    
+                    for (const request of requests) {
+                        if (request.url.includes('.mp4') || request.url.includes('video')) {
+                            log('cache-log', `    📹 ${request.url}`);
+                        }
+                    }
+                }
+                
+                if (cacheNames.length === 0) {
+                    log('cache-log', 'No caches found');
+                }
+            } catch (error) {
+                log('cache-log', `❌ Error: ${error.message}`);
+            }
+        }
+        
+        // Auto-check service worker on load
+        setTimeout(checkServiceWorker, 1000);
+    </script>
+</body>
+</html>

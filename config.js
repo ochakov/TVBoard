@@ -97,12 +97,12 @@ const BULLETIN_CONFIG = {
             size: 'small',
             config: {
                 videoUrls: [
-                    'https://devisrael.z39.web.core.windows.net/files/mp4/CalmHeb1.mp4',
-                    'https://devisrael.z39.web.core.windows.net/files/mp4/Shlomo1.mp4',
-                    'https://devisrael.z39.web.core.windows.net/files/mp4/Arik1.mp4',
-                    'https://devisrael.z39.web.core.windows.net/files/mp4/Golan1.mp4',
-                    'https://devisrael.z39.web.core.windows.net/files/mp4/LoveHeb1.mp4',
-                    'https://devisrael.z39.web.core.windows.net/files/mp4/LoveHeb2.mp4'
+                    'files/videos/CalmHeb1.mp4',
+                    'files/videos/Shlomo1.mp4',
+                    'files/videos/Arik1.mp4',
+                    'files/videos/Golan1.mp4',
+                    'files/videos/LoveHeb1.mp4',
+                    'files/videos/LoveHeb2.mp4'
                 ],
                 autoplay: true,
                 loop: true,
