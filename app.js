@@ -222,15 +222,65 @@ class BulletinBoard {
     // Service Worker Registration
     registerServiceWorker() {
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(registration => {
-                        console.log('SW registered: ', registration);
-                    })
-                    .catch(registrationError => {
-                        console.log('SW registration failed: ', registrationError);
+            // Register immediately - no need to wait for 'load' event since we're already in DOMContentLoaded
+            navigator.serviceWorker.register('/sw.js', {
+                updateViaCache: 'none' // Always check for updates
+            })
+                .then(registration => {
+                    console.log('✅ Service Worker registered successfully:', registration);
+
+                    // If there's a waiting service worker, activate it immediately
+                    if (registration.waiting) {
+                        console.log('⚠️ New service worker waiting, activating...');
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+
+                    // Listen for new service worker installations
+                    registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        console.log('🔄 New service worker installing...');
+
+                        newWorker.addEventListener('statechange', () => {
+                            console.log('Service worker state changed to:', newWorker.state);
+
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New service worker available, reload to activate
+                                console.log('🔄 New service worker installed, reloading page...');
+                                window.location.reload();
+                            }
+                        });
                     });
+
+                    // Check for updates periodically
+                    setInterval(() => {
+                        registration.update();
+                    }, 60000); // Check for SW updates every minute
+                })
+                .catch(registrationError => {
+                    console.error('❌ Service Worker registration failed:', registrationError);
+                });
+
+            // Listen for controller change (when SW takes control)
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                console.log('🔄 Service worker controller changed');
+
+                // Check if this is the first time SW is taking control
+                if (!sessionStorage.getItem('swControlled')) {
+                    sessionStorage.setItem('swControlled', 'true');
+                    console.log('🔄 First time under service worker control, reloading...');
+                    window.location.reload();
+                }
             });
+
+            // Check if already controlled
+            if (navigator.serviceWorker.controller) {
+                console.log('✅ Page is already controlled by service worker');
+                sessionStorage.setItem('swControlled', 'true');
+            } else {
+                console.log('⚠️ Page is not yet controlled by service worker');
+            }
+        } else {
+            console.warn('⚠️ Service Workers are not supported in this browser');
         }
     }
 

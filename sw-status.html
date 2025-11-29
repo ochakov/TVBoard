@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Worker Status</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .status-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin: 5px;
+        }
+        .status-active { background: #28a745; color: white; }
+        .status-inactive { background: #dc3545; color: white; }
+        .status-installing { background: #ffc107; color: black; }
+        .status-waiting { background: #17a2b8; color: white; }
+        .info-row {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .log-container {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="status-card">
+                    <h1 class="text-center mb-4">
+                        <i class="fas fa-cog fa-spin text-primary"></i>
+                        Service Worker Status
+                    </h1>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h3>Browser Support</h3>
+                            <div class="info-row">
+                                <strong>Service Worker API:</strong>
+                                <span id="sw-support" class="status-badge">Checking...</span>
+                            </div>
+                            <div class="info-row">
+                                <strong>Cache API:</strong>
+                                <span id="cache-support" class="status-badge">Checking...</span>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <h3>Registration Status</h3>
+                            <div class="info-row">
+                                <strong>Status:</strong>
+                                <span id="reg-status" class="status-badge">Checking...</span>
+                            </div>
+                            <div class="info-row">
+                                <strong>Scope:</strong>
+                                <code id="sw-scope" class="text-muted">N/A</code>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h3>Service Worker States</h3>
+                            <div class="info-row">
+                                <strong>Active:</strong>
+                                <span id="sw-active" class="text-muted">None</span>
+                            </div>
+                            <div class="info-row">
+                                <strong>Installing:</strong>
+                                <span id="sw-installing" class="text-muted">None</span>
+                            </div>
+                            <div class="info-row">
+                                <strong>Waiting:</strong>
+                                <span id="sw-waiting" class="text-muted">None</span>
+                            </div>
+                            <div class="info-row">
+                                <strong>Controller:</strong>
+                                <span id="sw-controller" class="text-muted">None</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-12">
+                            <h3>Actions</h3>
+                            <div class="d-grid gap-2 d-md-flex">
+                                <button id="register-sw" class="btn btn-primary">
+                                    <i class="fas fa-plus"></i> Register Service Worker
+                                </button>
+                                <button id="unregister-sw" class="btn btn-danger">
+                                    <i class="fas fa-trash"></i> Unregister Service Worker
+                                </button>
+                                <button id="update-sw" class="btn btn-info">
+                                    <i class="fas fa-sync"></i> Update Service Worker
+                                </button>
+                                <button id="refresh-status" class="btn btn-secondary">
+                                    <i class="fas fa-redo"></i> Refresh Status
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="status-card">
+                    <h3>Activity Log</h3>
+                    <div id="log-container" class="log-container">
+                        <div>Service Worker Status Checker initialized...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class ServiceWorkerStatus {
+            constructor() {
+                this.logContainer = document.getElementById('log-container');
+                this.init();
+            }
+
+            init() {
+                this.checkBrowserSupport();
+                this.checkRegistration();
+                this.setupEventListeners();
+                this.setupAutoRefresh();
+            }
+
+            checkBrowserSupport() {
+                const swSupport = document.getElementById('sw-support');
+                const cacheSupport = document.getElementById('cache-support');
+
+                if ('serviceWorker' in navigator) {
+                    swSupport.textContent = 'Supported ✓';
+                    swSupport.className = 'status-badge status-active';
+                    this.log('✅ Service Worker API is supported', 'success');
+                } else {
+                    swSupport.textContent = 'Not Supported ✗';
+                    swSupport.className = 'status-badge status-inactive';
+                    this.log('❌ Service Worker API is NOT supported', 'error');
+                }
+
+                if ('caches' in window) {
+                    cacheSupport.textContent = 'Supported ✓';
+                    cacheSupport.className = 'status-badge status-active';
+                    this.log('✅ Cache API is supported', 'success');
+                } else {
+                    cacheSupport.textContent = 'Not Supported ✗';
+                    cacheSupport.className = 'status-badge status-inactive';
+                    this.log('❌ Cache API is NOT supported', 'error');
+                }
+            }
+
+            async checkRegistration() {
+                if (!('serviceWorker' in navigator)) {
+                    document.getElementById('reg-status').textContent = 'Not Available';
+                    document.getElementById('reg-status').className = 'status-badge status-inactive';
+                    return;
+                }
+
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    
+                    if (registration) {
+                        document.getElementById('reg-status').textContent = 'Registered ✓';
+                        document.getElementById('reg-status').className = 'status-badge status-active';
+                        document.getElementById('sw-scope').textContent = registration.scope;
+                        
+                        this.log('✅ Service Worker is registered', 'success');
+                        this.log(`Scope: ${registration.scope}`, 'info');
+                        
+                        this.updateWorkerStates(registration);
+                    } else {
+                        document.getElementById('reg-status').textContent = 'Not Registered';
+                        document.getElementById('reg-status').className = 'status-badge status-inactive';
+                        this.log('⚠️ Service Worker is NOT registered', 'warning');
+                    }
+
+                    // Check controller
+                    if (navigator.serviceWorker.controller) {
+                        document.getElementById('sw-controller').textContent = 
+                            `Active (${navigator.serviceWorker.controller.scriptURL})`;
+                        this.log('✅ Page is controlled by Service Worker', 'success');
+                    } else {
+                        document.getElementById('sw-controller').textContent = 'Not Controlling';
+                        this.log('⚠️ Page is NOT controlled by Service Worker', 'warning');
+                    }
+                } catch (error) {
+                    this.log(`❌ Error checking registration: ${error.message}`, 'error');
+                }
+            }
+
+            updateWorkerStates(registration) {
+                if (registration.active) {
+                    document.getElementById('sw-active').textContent = 
+                        `Active (${registration.active.state})`;
+                    this.log(`Active worker state: ${registration.active.state}`, 'info');
+                }
+
+                if (registration.installing) {
+                    document.getElementById('sw-installing').textContent = 
+                        `Installing (${registration.installing.state})`;
+                    this.log(`Installing worker state: ${registration.installing.state}`, 'info');
+                }
+
+                if (registration.waiting) {
+                    document.getElementById('sw-waiting').textContent = 
+                        `Waiting (${registration.waiting.state})`;
+                    this.log(`Waiting worker state: ${registration.waiting.state}`, 'info');
+                }
+            }
+
+            setupEventListeners() {
+                document.getElementById('register-sw').addEventListener('click', () => {
+                    this.registerServiceWorker();
+                });
+
+                document.getElementById('unregister-sw').addEventListener('click', () => {
+                    this.unregisterServiceWorker();
+                });
+
+                document.getElementById('update-sw').addEventListener('click', () => {
+                    this.updateServiceWorker();
+                });
+
+                document.getElementById('refresh-status').addEventListener('click', () => {
+                    this.checkRegistration();
+                });
+            }
+
+            async registerServiceWorker() {
+                if (!('serviceWorker' in navigator)) {
+                    this.log('❌ Service Worker not supported', 'error');
+                    return;
+                }
+
+                try {
+                    this.log('🔄 Registering Service Worker...', 'info');
+                    const registration = await navigator.serviceWorker.register('/sw.js', {
+                        updateViaCache: 'none'
+                    });
+                    this.log('✅ Service Worker registered successfully!', 'success');
+                    this.log(`Scope: ${registration.scope}`, 'info');
+
+                    // If there's a waiting service worker, activate it
+                    if (registration.waiting) {
+                        this.log('⚠️ Service worker waiting, sending SKIP_WAITING message', 'warning');
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+
+                    // Listen for controller change
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        this.log('🔄 Controller changed, reloading page...', 'info');
+                        setTimeout(() => window.location.reload(), 1000);
+                    });
+
+                    setTimeout(() => this.checkRegistration(), 1000);
+                } catch (error) {
+                    this.log(`❌ Registration failed: ${error.message}`, 'error');
+                }
+            }
+
+            async unregisterServiceWorker() {
+                if (!('serviceWorker' in navigator)) {
+                    this.log('❌ Service Worker not supported', 'error');
+                    return;
+                }
+
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    if (registration) {
+                        this.log('🔄 Unregistering Service Worker...', 'info');
+                        await registration.unregister();
+                        this.log('✅ Service Worker unregistered successfully!', 'success');
+                        
+                        setTimeout(() => this.checkRegistration(), 1000);
+                    } else {
+                        this.log('⚠️ No Service Worker to unregister', 'warning');
+                    }
+                } catch (error) {
+                    this.log(`❌ Unregistration failed: ${error.message}`, 'error');
+                }
+            }
+
+            async updateServiceWorker() {
+                if (!('serviceWorker' in navigator)) {
+                    this.log('❌ Service Worker not supported', 'error');
+                    return;
+                }
+
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    if (registration) {
+                        this.log('🔄 Checking for Service Worker updates...', 'info');
+                        await registration.update();
+                        this.log('✅ Update check completed', 'success');
+                        
+                        setTimeout(() => this.checkRegistration(), 1000);
+                    } else {
+                        this.log('⚠️ No Service Worker registered to update', 'warning');
+                    }
+                } catch (error) {
+                    this.log(`❌ Update failed: ${error.message}`, 'error');
+                }
+            }
+
+            setupAutoRefresh() {
+                setInterval(() => {
+                    this.checkRegistration();
+                }, 5000);
+            }
+
+            log(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = document.createElement('div');
+                logEntry.style.color = {
+                    'info': '#0066cc',
+                    'success': '#28a745',
+                    'warning': '#ffc107',
+                    'error': '#dc3545'
+                }[type] || '#000';
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                
+                this.logContainer.appendChild(logEntry);
+                this.logContainer.scrollTop = this.logContainer.scrollHeight;
+                
+                console.log(`[SW Status] ${message}`);
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new ServiceWorkerStatus();
+        });
+    </script>
+</body>
+</html>
+

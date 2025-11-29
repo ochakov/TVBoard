@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Video Cache Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        video {
+            width: 100%;
+            max-width: 600px;
+            display: block;
+            margin: 20px 0;
+        }
+        .log {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            padding: 15px;
+            margin: 10px 0;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 3px 0;
+            padding: 3px;
+        }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        .info { color: #569cd6; }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎬 Simple Video Cache Test</h1>
+    
+    <div>
+        <h3>Service Worker Status: <span id="sw-status">Checking...</span></h3>
+        <h3>Controller: <span id="controller-status">Checking...</span></h3>
+    </div>
+
+    <div>
+        <button onclick="unregisterAll()">Unregister SW</button>
+        <button onclick="registerSW()">Register SW</button>
+        <button onclick="forceControl()">Force Control</button>
+        <button onclick="checkCaches()">Check Caches</button>
+        <button onclick="clearLogs()">Clear Logs</button>
+        <button onclick="location.reload()">Reload Page</button>
+    </div>
+
+    <h3>Test Video:</h3>
+    <video id="test-video" controls>
+        <source src="files/videos/CalmHeb1.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <div class="log" id="log"></div>
+
+    <script>
+        const logContainer = document.getElementById('log');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[Test] ${message}`);
+        }
+
+        function updateStatus() {
+            const swStatus = document.getElementById('sw-status');
+            const controllerStatus = document.getElementById('controller-status');
+
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistration().then(reg => {
+                    if (reg) {
+                        if (reg.active) {
+                            swStatus.textContent = 'Active';
+                            swStatus.style.color = '#4ec9b0';
+                        } else if (reg.installing) {
+                            swStatus.textContent = 'Installing';
+                            swStatus.style.color = '#dcdcaa';
+                        } else {
+                            swStatus.textContent = 'Registered (no active)';
+                            swStatus.style.color = '#dcdcaa';
+                        }
+                    } else {
+                        swStatus.textContent = 'Not Registered';
+                        swStatus.style.color = '#f48771';
+                    }
+                });
+
+                if (navigator.serviceWorker.controller) {
+                    controllerStatus.textContent = 'Controlling';
+                    controllerStatus.style.color = '#4ec9b0';
+                } else {
+                    controllerStatus.textContent = 'Not Controlling';
+                    controllerStatus.style.color = '#f48771';
+                }
+            } else {
+                swStatus.textContent = 'Not Supported';
+                swStatus.style.color = '#f48771';
+            }
+        }
+
+        async function registerSW() {
+            log('🔄 Registering service worker...', 'info');
+            try {
+                const reg = await navigator.serviceWorker.register('/sw.js', {
+                    updateViaCache: 'none'
+                });
+                log('✅ Service worker registered', 'success');
+                
+                if (reg.installing) {
+                    log('⏳ Service worker installing...', 'info');
+                    reg.installing.addEventListener('statechange', (e) => {
+                        log(`🔄 State: ${e.target.state}`, 'info');
+                    });
+                }
+                
+                setTimeout(updateStatus, 500);
+            } catch (error) {
+                log(`❌ Registration failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function unregisterAll() {
+            log('🔄 Unregistering all service workers...', 'info');
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const reg of regs) {
+                await reg.unregister();
+                log('✅ Unregistered', 'success');
+            }
+            sessionStorage.clear();
+            updateStatus();
+        }
+
+        async function forceControl() {
+            log('🔄 Attempting to force service worker control...', 'info');
+            try {
+                const reg = await navigator.serviceWorker.getRegistration();
+                if (!reg) {
+                    log('❌ No service worker registered', 'error');
+                    return;
+                }
+
+                if (!reg.active) {
+                    log('❌ No active service worker', 'error');
+                    return;
+                }
+
+                // Send message to SW to claim clients
+                log('📤 Sending CLAIM_CLIENTS message to SW...', 'info');
+                reg.active.postMessage({ type: 'CLAIM_CLIENTS' });
+
+                // Wait a bit and reload
+                setTimeout(() => {
+                    log('🔄 Reloading page...', 'info');
+                    location.reload();
+                }, 500);
+            } catch (error) {
+                log(`❌ Force control failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkCaches() {
+            log('🔍 Checking caches...', 'info');
+            const cacheNames = await caches.keys();
+            log(`📦 Found ${cacheNames.length} cache(s): ${cacheNames.join(', ')}`, 'info');
+            
+            for (const cacheName of cacheNames) {
+                const cache = await caches.open(cacheName);
+                const keys = await cache.keys();
+                log(`📦 Cache "${cacheName}" has ${keys.length} entries`, 'info');
+                
+                keys.forEach(request => {
+                    log(`  - ${request.url}`, 'info');
+                });
+            }
+        }
+
+        function clearLogs() {
+            logContainer.innerHTML = '';
+        }
+
+        // Initialize
+        log('🚀 Page loaded', 'info');
+        updateStatus();
+
+        // Listen for controller changes
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                log('🔄 Controller changed!', 'success');
+                updateStatus();
+
+                // Reload page when controller changes to ensure we're under control
+                if (!sessionStorage.getItem('reloadedForControl')) {
+                    sessionStorage.setItem('reloadedForControl', 'true');
+                    log('🔄 Reloading to activate control...', 'info');
+                    setTimeout(() => location.reload(), 500);
+                }
+            });
+
+            // Check if already registered
+            navigator.serviceWorker.getRegistration().then(reg => {
+                if (reg) {
+                    log('ℹ️ Service worker already registered', 'info');
+                    log(`   Scope: ${reg.scope}`, 'info');
+
+                    if (reg.active) {
+                        log(`   Active: ${reg.active.state}`, 'info');
+                    }
+                    if (reg.installing) {
+                        log(`   Installing: ${reg.installing.state}`, 'info');
+                    }
+                    if (reg.waiting) {
+                        log(`   Waiting: ${reg.waiting.state}`, 'info');
+                    }
+
+                    if (navigator.serviceWorker.controller) {
+                        log('✅ Page is controlled by service worker', 'success');
+                        log(`   Controller: ${navigator.serviceWorker.controller.scriptURL}`, 'info');
+                        sessionStorage.setItem('reloadedForControl', 'true');
+                    } else {
+                        log('⚠️ Page is NOT controlled (reload may be needed)', 'warning');
+
+                        // If SW is active but not controlling, try to trigger control
+                        if (reg.active && reg.active.state === 'activated') {
+                            log('⚠️ SW is activated but not controlling - this is unusual', 'warning');
+                            log('💡 Try: Unregister SW, then Register SW, then Reload Page', 'warning');
+                        }
+                    }
+                } else {
+                    log('⚠️ No service worker registered', 'warning');
+                    log('💡 Click "Register SW" button to register', 'info');
+                }
+            });
+        }
+
+        // Video event listeners
+        const video = document.getElementById('test-video');
+        
+        video.addEventListener('loadstart', () => {
+            log('🎬 Video: loadstart', 'info');
+        });
+        
+        video.addEventListener('loadedmetadata', () => {
+            log('🎬 Video: loadedmetadata', 'info');
+        });
+        
+        video.addEventListener('loadeddata', () => {
+            log('🎬 Video: loadeddata', 'info');
+        });
+        
+        video.addEventListener('canplay', () => {
+            log('🎬 Video: canplay', 'success');
+        });
+        
+        video.addEventListener('play', () => {
+            log('🎬 Video: play started', 'success');
+        });
+        
+        video.addEventListener('error', (e) => {
+            log(`❌ Video error: ${e.message || 'Unknown error'}`, 'error');
+        });
+
+        // Update status every 2 seconds
+        setInterval(updateStatus, 2000);
+    </script>
+</body>
+</html>
+

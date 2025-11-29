@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SW Registration Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .log {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #007acc;
+            padding-left: 10px;
+        }
+        .success { border-left-color: #4ec9b0; color: #4ec9b0; }
+        .error { border-left-color: #f48771; color: #f48771; }
+        .warning { border-left-color: #dcdcaa; color: #dcdcaa; }
+        .info { border-left-color: #569cd6; color: #569cd6; }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        .status {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .status-item {
+            margin: 8px 0;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge-success { background: #4ec9b0; color: #000; }
+        .badge-error { background: #f48771; color: #000; }
+        .badge-warning { background: #dcdcaa; color: #000; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Service Worker Registration Test</h1>
+    
+    <div class="status">
+        <h2>Status</h2>
+        <div class="status-item">
+            <strong>Service Worker Support:</strong> 
+            <span id="sw-support" class="badge">Checking...</span>
+        </div>
+        <div class="status-item">
+            <strong>Registration State:</strong> 
+            <span id="reg-state" class="badge">Not Started</span>
+        </div>
+        <div class="status-item">
+            <strong>Controller:</strong> 
+            <span id="controller-state" class="badge">None</span>
+        </div>
+    </div>
+
+    <div>
+        <button onclick="registerSW()">Register Service Worker</button>
+        <button onclick="unregisterSW()">Unregister All</button>
+        <button onclick="clearLogs()">Clear Logs</button>
+        <button onclick="location.reload()">Reload Page</button>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <script>
+        const logContainer = document.getElementById('log');
+        let registrationPromise = null;
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[SW Test] ${message}`);
+        }
+
+        function updateStatus() {
+            // Check SW support
+            const swSupport = document.getElementById('sw-support');
+            if ('serviceWorker' in navigator) {
+                swSupport.textContent = 'Supported';
+                swSupport.className = 'badge badge-success';
+            } else {
+                swSupport.textContent = 'Not Supported';
+                swSupport.className = 'badge badge-error';
+            }
+
+            // Check controller
+            const controllerState = document.getElementById('controller-state');
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                controllerState.textContent = 'Active';
+                controllerState.className = 'badge badge-success';
+            } else {
+                controllerState.textContent = 'None';
+                controllerState.className = 'badge badge-warning';
+            }
+        }
+
+        async function registerSW() {
+            if (!('serviceWorker' in navigator)) {
+                log('❌ Service Worker not supported in this browser', 'error');
+                return;
+            }
+
+            const regState = document.getElementById('reg-state');
+            regState.textContent = 'Registering...';
+            regState.className = 'badge badge-warning';
+
+            log('🔄 Starting service worker registration...', 'info');
+            log('📍 URL: /sw.js', 'info');
+
+            try {
+                log('⏳ Calling navigator.serviceWorker.register()...', 'info');
+                
+                // Set a timeout to detect if registration hangs
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Registration timeout after 30 seconds')), 30000);
+                });
+
+                registrationPromise = navigator.serviceWorker.register('/sw.js', {
+                    updateViaCache: 'none'
+                });
+
+                log('⏳ Waiting for registration promise to resolve...', 'info');
+                
+                const registration = await Promise.race([registrationPromise, timeoutPromise]);
+                
+                log('✅ Registration promise resolved!', 'success');
+                log(`📦 Scope: ${registration.scope}`, 'info');
+                
+                regState.textContent = 'Registered';
+                regState.className = 'badge badge-success';
+
+                // Check states
+                if (registration.installing) {
+                    log('🔧 Service worker is installing...', 'info');
+                    registration.installing.addEventListener('statechange', (e) => {
+                        log(`🔄 State changed to: ${e.target.state}`, 'info');
+                    });
+                }
+                
+                if (registration.waiting) {
+                    log('⏸️ Service worker is waiting', 'warning');
+                }
+                
+                if (registration.active) {
+                    log('✅ Service worker is active', 'success');
+                }
+
+                // Listen for updates
+                registration.addEventListener('updatefound', () => {
+                    log('🔄 Update found!', 'info');
+                });
+
+                // Check controller after a delay
+                setTimeout(() => {
+                    updateStatus();
+                    if (navigator.serviceWorker.controller) {
+                        log('✅ Page is now controlled by service worker', 'success');
+                    } else {
+                        log('⚠️ Page is not yet controlled (may need reload)', 'warning');
+                    }
+                }, 1000);
+
+            } catch (error) {
+                log(`❌ Registration failed: ${error.message}`, 'error');
+                log(`❌ Error stack: ${error.stack}`, 'error');
+                
+                regState.textContent = 'Failed';
+                regState.className = 'badge badge-error';
+            }
+        }
+
+        async function unregisterSW() {
+            if (!('serviceWorker' in navigator)) {
+                log('❌ Service Worker not supported', 'error');
+                return;
+            }
+
+            try {
+                log('🔄 Unregistering all service workers...', 'info');
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                
+                if (registrations.length === 0) {
+                    log('ℹ️ No service workers to unregister', 'info');
+                    return;
+                }
+
+                for (const registration of registrations) {
+                    await registration.unregister();
+                    log(`✅ Unregistered: ${registration.scope}`, 'success');
+                }
+
+                document.getElementById('reg-state').textContent = 'Not Registered';
+                document.getElementById('reg-state').className = 'badge badge-warning';
+                
+                updateStatus();
+            } catch (error) {
+                log(`❌ Unregistration failed: ${error.message}`, 'error');
+            }
+        }
+
+        function clearLogs() {
+            logContainer.innerHTML = '';
+            log('Logs cleared', 'info');
+        }
+
+        // Initialize
+        log('🚀 Test page loaded', 'info');
+        updateStatus();
+
+        // Listen for controller changes
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                log('🔄 Controller changed!', 'success');
+                updateStatus();
+            });
+
+            // Check current state
+            navigator.serviceWorker.getRegistration().then(reg => {
+                if (reg) {
+                    log('ℹ️ Service worker already registered', 'info');
+                    log(`📦 Scope: ${reg.scope}`, 'info');
+                    document.getElementById('reg-state').textContent = 'Already Registered';
+                    document.getElementById('reg-state').className = 'badge badge-success';
+                }
+            });
+        }
+
+        // Auto-update status every 2 seconds
+        setInterval(updateStatus, 2000);
+    </script>
+</body>
+</html>
+

@@ -11,6 +11,12 @@
       "package*.json",
       "download-videos.js"
     ],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "site": "tvboard-b17d8",
+    "release": {
+      "maxVersions": 2
+    },
     "rewrites": [
       {
         "source": "**",

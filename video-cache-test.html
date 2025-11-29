@@ -68,12 +68,12 @@
                 <label for="video-select" class="form-label">Select a test video:</label>
                 <select id="video-select" class="form-select" onchange="loadSelectedVideo()">
                     <option value="">Choose a video...</option>
-                    <option value="https://devisrael.z39.web.core.windows.net/files/mp4/CalmHeb1.mp4">CalmHeb1.mp4</option>
-                    <option value="https://devisrael.z39.web.core.windows.net/files/mp4/Shlomo1.mp4">Shlomo1.mp4</option>
-                    <option value="https://devisrael.z39.web.core.windows.net/files/mp4/Arik1.mp4">Arik1.mp4</option>
-                    <option value="https://devisrael.z39.web.core.windows.net/files/mp4/Golan1.mp4">Golan1.mp4</option>
-                    <option value="https://devisrael.z39.web.core.windows.net/files/mp4/LoveHeb1.mp4">LoveHeb1.mp4</option>
-                    <option value="https://devisrael.z39.web.core.windows.net/files/mp4/LoveHeb2.mp4">LoveHeb2.mp4</option>
+                    <option value="files/videos/CalmHeb1.mp4">CalmHeb1.mp4</option>
+                    <option value="files/videos/Shlomo1.mp4">Shlomo1.mp4</option>
+                    <option value="files/videos/Arik1.mp4">Arik1.mp4</option>
+                    <option value="files/videos/Golan1.mp4">Golan1.mp4</option>
+                    <option value="files/videos/LoveHeb1.mp4">LoveHeb1.mp4</option>
+                    <option value="files/videos/LoveHeb2.mp4">LoveHeb2.mp4</option>
                 </select>
             </div>
 
@@ -411,7 +411,17 @@
                 });
                 
                 video.addEventListener('error', (e) => {
-                    console.error('Video error:', e);
+                    console.error('Video error event:', e);
+                    if (video.error) {
+                        console.error('Video error details:', {
+                            code: video.error.code,
+                            message: video.error.message,
+                            MEDIA_ERR_ABORTED: MediaError.MEDIA_ERR_ABORTED,
+                            MEDIA_ERR_NETWORK: MediaError.MEDIA_ERR_NETWORK,
+                            MEDIA_ERR_DECODE: MediaError.MEDIA_ERR_DECODE,
+                            MEDIA_ERR_SRC_NOT_SUPPORTED: MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+                        });
+                    }
                 });
             } else {
                 video.style.display = 'none';
