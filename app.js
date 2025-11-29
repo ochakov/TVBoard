@@ -9,6 +9,13 @@ class BulletinBoard {
         this.currentLanguage = 'he'; // Default language
         this.configService = window.configService;
         this.isInitialized = false;
+
+        // Scheduler properties
+        this.originalComponents = new Map(); // Store original configs to revert
+        this.activeScheduleIds = new Set();
+        this.sunTimes = { sunrise: null, sunset: null };
+        this.schedulerInterval = null;
+
         this.init();
     }
 
@@ -32,6 +39,7 @@ class BulletinBoard {
             this.setupFullscreen();
             this.setupConfigChangeListener();
             this.setupPageUnloadCleanup();
+            this.setupScheduler();
 
             this.isInitialized = true;
             console.log('BulletinBoard initialized successfully');
@@ -197,7 +205,7 @@ class BulletinBoard {
         // Set document language and direction
         document.documentElement.lang = this.currentLanguage;
         document.documentElement.dir = this.config.language.rtl ? 'rtl' : 'ltr';
-        
+
         // Update app title from configuration
         const titleElement = document.getElementById('app-title');
         if (titleElement && this.config.app.showTitle) {
@@ -206,10 +214,10 @@ class BulletinBoard {
         } else if (titleElement) {
             titleElement.style.display = 'none';
         }
-        
+
         // Update page title
         document.title = this.config.app.title;
-        
+
         // Setup background image
         this.setupBackground();
     }
@@ -379,7 +387,7 @@ class BulletinBoard {
 
         // Add click listener to request fullscreen
         document.addEventListener('click', requestFullscreen, { once: true });
-        
+
         // Add keyboard listener for F11 key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'F11') {
@@ -403,14 +411,14 @@ class BulletinBoard {
         if (this.config.app.background && this.config.app.background.enabled) {
             const body = document.body;
             const bg = this.config.app.background;
-            
+
             // Apply background image with proper sizing
             body.style.backgroundImage = `url('${bg.imageUrl}')`;
             body.style.backgroundPosition = bg.position || 'center';
             body.style.backgroundSize = bg.size || '100% 100%';
             body.style.backgroundRepeat = bg.repeat || 'no-repeat';
             body.style.backgroundAttachment = 'fixed';
-            
+
             // Add overlay if specified
             if (bg.overlay) {
                 // Create overlay element
@@ -432,7 +440,7 @@ class BulletinBoard {
         const now = new Date();
         const dateElement = document.getElementById('current-date');
         const timeElement = document.getElementById('current-time');
-        
+
         if (dateElement) {
             dateElement.textContent = now.toLocaleDateString(this.config.language.dateFormat, {
                 weekday: 'long',
@@ -441,7 +449,7 @@ class BulletinBoard {
                 day: 'numeric'
             });
         }
-        
+
         if (timeElement) {
             timeElement.textContent = now.toLocaleTimeString(this.config.language.timeFormat, {
                 hour12: false,
@@ -461,7 +469,7 @@ class BulletinBoard {
     // Weather Functions
     async setupWeather() {
         if (!this.config.weather.enabled) return;
-        
+
         try {
             await this.fetchWeather();
             this.setupWeatherInterval();
@@ -480,7 +488,7 @@ class BulletinBoard {
         const apiKey = this.config.weather.apiKey;
         const city = encodeURIComponent(this.config.weather.city);
         const units = this.config.weather.units;
-        
+
         // Map language codes to OpenWeatherMap supported languages
         const weatherLanguageMap = {
             'he': 'he', // Hebrew
@@ -496,20 +504,30 @@ class BulletinBoard {
             'ja': 'ja', // Japanese
             'ko': 'kr' // Korean
         };
-        
+
         // Use app language if configured to do so, otherwise default to English
-        const weatherLang = this.config.weather.useAppLanguage ? 
+        const weatherLang = this.config.weather.useAppLanguage ?
             (weatherLanguageMap[this.currentLanguage] || 'en') : 'en';
-        
+
         const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=${units}&lang=${weatherLang}`;
 
         try {
             console.log(`Fetching weather for ${city} in language: ${weatherLang}`);
             const response = await fetch(url);
             if (!response.ok) throw new Error('Weather API request failed');
-            
+
             const data = await response.json();
             this.weatherData = data;
+
+            // Store sun times for scheduler
+            if (data.sys) {
+                this.sunTimes = {
+                    sunrise: data.sys.sunrise,
+                    sunset: data.sys.sunset
+                };
+                console.log('Sun times updated:', this.sunTimes);
+            }
+
             console.log('Weather data received:', data.weather[0].description);
             this.displayWeather();
         } catch (error) {
@@ -520,16 +538,16 @@ class BulletinBoard {
 
     displayWeather() {
         if (!this.weatherData) return;
-        
+
         const tempElement = document.getElementById('weather-temp');
         const descElement = document.getElementById('weather-desc');
-        
+
         if (tempElement) {
             const temp = Math.round(this.weatherData.main.temp);
             const unit = this.config.weather.units === 'metric' ? '°C' : '°F';
             tempElement.textContent = `${temp}${unit}`;
         }
-        
+
         if (descElement) {
             descElement.textContent = this.weatherData.weather[0].description;
         }
@@ -538,7 +556,7 @@ class BulletinBoard {
     displayWeatherPlaceholder() {
         const tempElement = document.getElementById('weather-temp');
         const descElement = document.getElementById('weather-desc');
-        
+
         if (tempElement) tempElement.textContent = '22°C';
         if (descElement) descElement.textContent = 'Sunny';
     }
@@ -546,7 +564,7 @@ class BulletinBoard {
     displayWeatherError() {
         const tempElement = document.getElementById('weather-temp');
         const descElement = document.getElementById('weather-desc');
-        
+
         if (tempElement) tempElement.textContent = '--°C';
         if (descElement) descElement.textContent = 'N/A';
     }
@@ -566,7 +584,7 @@ class BulletinBoard {
         }
 
         gridElement.innerHTML = '';
-        
+
         this.config.components.forEach(component => {
             const componentElement = this.createComponent(component);
             if (componentElement) {
@@ -576,7 +594,7 @@ class BulletinBoard {
                     config: component,
                     lastUpdate: Date.now()
                 });
-                
+
                 // Load component content after DOM element is added
                 setTimeout(() => {
                     this.loadComponentContent(component);
@@ -588,7 +606,7 @@ class BulletinBoard {
     createComponent(componentConfig) {
         const sizeConfig = this.sizeConfig[componentConfig.size] || this.sizeConfig.medium;
         const colClass = `col-lg-${sizeConfig.cols} col-md-${sizeConfig.cols} col-sm-12 mb-4`;
-        
+
         const wrapper = document.createElement('div');
         wrapper.className = colClass;
         wrapper.innerHTML = `
@@ -674,6 +692,12 @@ class BulletinBoard {
             clearTimeout(element.videoRetryInfo.retryTimer);
             element.videoRetryInfo.retryTimer = null;
         }
+        // Cleanup slideshow interval
+        if (element.slideshowInterval) {
+            console.log('Cleaning up slideshow interval');
+            clearInterval(element.slideshowInterval);
+            element.slideshowInterval = null;
+        }
     }
 
     // Clean up all retry timers (called on page unload)
@@ -686,29 +710,84 @@ class BulletinBoard {
     }
 
     async loadImageComponent(config, element) {
+        // Handle slideshow if imageUrls is present and has more than one image
+        if (config.config.imageUrls && config.config.imageUrls.length > 1) {
+            this.loadSlideshowComponent(config, element);
+            return;
+        }
+
+        // Fallback to single image
+        const imageUrl = config.config.imageUrl || (config.config.imageUrls && config.config.imageUrls[0]);
+
+        if (!imageUrl) {
+            element.innerHTML = `<div class="error-message">${this.getTranslation('noData')}</div>`;
+            return;
+        }
+
         const img = document.createElement('img');
-        img.src = config.config.imageUrl;
-        img.alt = config.config.altText;
+        img.src = imageUrl;
+        img.alt = config.config.altText || '';
         img.className = 'img-fluid image-component';
-        
+
         // Add a timeout to prevent infinite loading
         const timeout = setTimeout(() => {
             if (element.querySelector('.loading')) {
                 element.innerHTML = `<div class="error-message">${this.getTranslation('timeoutError')} - ${this.getTranslation('imageError')}</div>`;
             }
         }, 10000); // 10 second timeout
-        
+
         img.onload = () => {
             clearTimeout(timeout);
             element.innerHTML = '';
             element.appendChild(img);
         };
-        
+
         img.onerror = (error) => {
             clearTimeout(timeout);
-            console.error('Image loading failed:', config.config.imageUrl, error);
-            element.innerHTML = `<div class="error-message">${this.getTranslation('imageError')}<br><small>URL: ${config.config.imageUrl}</small></div>`;
+            console.error('Image loading failed:', imageUrl, error);
+            element.innerHTML = `<div class="error-message">${this.getTranslation('imageError')}<br><small>URL: ${imageUrl}</small></div>`;
         };
+    }
+
+    loadSlideshowComponent(config, element) {
+        const imageUrls = config.config.imageUrls;
+        const interval = config.config.interval || 5000; // Default 5 seconds
+        const transitionDuration = config.config.transitionDuration || 1000; // Default 1 second
+
+        // Create container
+        const container = document.createElement('div');
+        container.className = 'slideshow-container';
+        element.innerHTML = '';
+        element.appendChild(container);
+
+        let currentIndex = 0;
+        let slides = [];
+
+        // Preload and create slides
+        imageUrls.forEach((url, index) => {
+            const img = document.createElement('img');
+            img.src = url;
+            img.className = `slide-image ${index === 0 ? 'active' : ''}`;
+            img.style.transition = `opacity ${transitionDuration}ms ease-in-out`;
+            container.appendChild(img);
+            slides.push(img);
+        });
+
+        // Start slideshow
+        const slideshowInterval = setInterval(() => {
+            const nextIndex = (currentIndex + 1) % slides.length;
+
+            // Fade out current
+            slides[currentIndex].classList.remove('active');
+
+            // Fade in next
+            slides[nextIndex].classList.add('active');
+
+            currentIndex = nextIndex;
+        }, interval);
+
+        // Store interval to clean up later if needed
+        element.slideshowInterval = slideshowInterval;
     }
 
     async loadRSSComponent(config, element) {
@@ -770,15 +849,15 @@ class BulletinBoard {
                 const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(config.config.feedUrl)}`, {
                     signal: controller.signal
                 });
-                
+
                 clearTimeout(timeoutId);
-                
+
                 if (!response.ok) {
                     throw new Error(`RSS fetch failed: ${response.status} ${response.statusText}`);
                 }
-                
+
                 data = await response.json();
-                
+
                 if (data.status !== 'ok') {
                     throw new Error(data.message || 'RSS parsing failed');
                 }
@@ -792,152 +871,132 @@ class BulletinBoard {
 
             const html = items.map(item => {
                 let imageHtml = '';
-                
+
                 // Check if showImages is enabled and item has an image
                 if (config.config.showImages && item.thumbnail) {
                     imageHtml = `<img src="${this.escapeHtml(item.thumbnail)}" alt="${this.escapeHtml(item.title || '')}" class="rss-icon">`;
                 }
-                
+
                 return `
                     <div class="rss-item">
+                        ${imageHtml}
                         <div class="rss-content">
-                            ${imageHtml}
-                            <div class="rss-text">
-                                <h6>${this.escapeHtml(item.title || '')}</h6>
-                                <p>${this.escapeHtml((item.description || '').replace(/<[^>]*>/g, ''))}</p>
-                                <div class="rss-date">${item.pubDate ? new Date(item.pubDate).toLocaleDateString(this.config.language.dateFormat, {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric'
-                                }) : ''}</div>
-                            </div>
+                            <div class="rss-title">${this.escapeHtml(item.title)}</div>
+                            <div class="rss-date">${new Date(item.pubDate).toLocaleDateString(this.config.language.dateFormat)}</div>
                         </div>
                     </div>
                 `;
             }).join('');
 
-            element.innerHTML = html;
+            element.innerHTML = `<div class="rss-feed">${html}</div>`;
+
         } catch (error) {
-            console.error('RSS loading error:', error);
             if (error.name === 'AbortError') {
-                element.innerHTML = `<div class="error-message">${this.getTranslation('timeoutError')} - ${this.getTranslation('rssError')}</div>`;
+                console.error('RSS fetch timed out');
+                element.innerHTML = `<div class="error-message">${this.getTranslation('timeoutError')}</div>`;
             } else {
+                console.error('RSS loading error:', error);
                 element.innerHTML = `<div class="error-message">${this.getTranslation('rssError')}<br><small>${error.message}</small></div>`;
             }
         }
     }
 
     async loadVideoComponent(config, element) {
-        // Store retry information
+        // Initialize retry info if not present
         if (!element.videoRetryInfo) {
             element.videoRetryInfo = {
                 retryCount: 0,
-                maxRetries: 10, // Maximum number of retries
-                retryInterval: 60000, // 1 minute in milliseconds
-                retryTimer: null,
-                currentIndex: config.config.randomizeStart ?
-                    Math.floor(Math.random() * config.config.videoUrls.length) : 0
+                maxRetries: 3,
+                retryInterval: 5000, // 5 seconds
+                retryTimer: null
             };
         }
 
-        const retryInfo = element.videoRetryInfo;
-
-        // Clear any existing retry timer
-        if (retryInfo.retryTimer) {
-            clearTimeout(retryInfo.retryTimer);
-            retryInfo.retryTimer = null;
+        const videoUrls = config.config.videoUrls;
+        if (!videoUrls || videoUrls.length === 0) {
+            element.innerHTML = `<div class="error-message">${this.getTranslation('noData')}</div>`;
+            return;
         }
 
-        console.log(`Loading video component (attempt ${retryInfo.retryCount + 1}):`, config.id);
+        // Determine which video to play
+        let currentVideoIndex = 0;
+
+        // Handle randomization if enabled
+        if (config.config.randomizeStart) {
+            // Pick a random video
+            currentVideoIndex = Math.floor(Math.random() * videoUrls.length);
+            console.log(`Randomized start: playing video index ${currentVideoIndex} (${videoUrls[currentVideoIndex]})`);
+        }
 
         const video = document.createElement('video');
-        video.controls = true;
-        video.autoplay = config.config.autoplay;
-        video.muted = config.config.muted;
         video.className = 'video-component';
+        video.controls = true; // Always show controls for better UX
 
-        // Add timeout for video loading
-        const loadingTimeout = setTimeout(() => {
-            console.log('Video loading timeout reached');
-            this.handleVideoError(config, element, 'Loading timeout');
-        }, 20000); // 20 second timeout for videos
-
-        // Function to handle video errors and retry logic
-        const handleVideoError = (errorMessage) => {
-            clearTimeout(loadingTimeout);
-            console.error(`Video loading failed for ${config.id}:`, errorMessage);
-            this.handleVideoError(config, element, errorMessage);
-        };
-
-        // Set up video source rotation if multiple URLs
-        if (config.config.videoUrls.length > 1) {
-            video.src = config.config.videoUrls[retryInfo.currentIndex];
-            video.loop = false; // Disable loop when cycling through multiple videos
-
-            video.addEventListener('ended', () => {
-                retryInfo.currentIndex = (retryInfo.currentIndex + 1) % config.config.videoUrls.length;
-                video.src = config.config.videoUrls[retryInfo.currentIndex];
-                video.load();
-                if (config.config.autoplay) {
-                    video.play().catch(e => console.log('Autoplay failed:', e));
-                }
-            });
+        // Set attributes based on config
+        if (config.config.autoplay) {
+            video.autoplay = true;
+            video.muted = config.config.muted !== false; // Default to muted if autoplay is on (browser policy)
         } else {
-            video.src = config.config.videoUrls[0];
-            video.loop = config.config.loop; // Only loop if there's a single video
+            video.muted = config.config.muted === true;
         }
 
-        // Success handlers
-        video.onloadstart = () => {
-            clearTimeout(loadingTimeout);
-            console.log(`Video load started successfully for ${config.id}`);
-            // Reset retry count on successful load start
-            retryInfo.retryCount = 0;
-        };
+        if (config.config.loop) {
+            video.loop = true;
+        }
 
-        video.oncanplay = () => {
-            clearTimeout(loadingTimeout);
-            console.log(`Video can play for ${config.id}`);
-        };
+        // Set source
+        video.src = videoUrls[currentVideoIndex];
 
-        // Error handlers
-        video.onerror = (error) => {
-            const errorMsg = `Video element error: ${error.target?.error?.message || 'Unknown error'}`;
-            handleVideoError(errorMsg);
-        };
+        // Add error handling
+        video.onerror = (e) => {
+            console.error('Video playback error:', video.error);
 
-        video.onabort = () => {
-            handleVideoError('Video loading aborted');
-        };
-
-        video.onstalled = () => {
-            console.warn(`Video stalled for ${config.id}, will retry if it doesn't recover`);
-            setTimeout(() => {
-                if (video.readyState < 3) { // HAVE_FUTURE_DATA
-                    handleVideoError('Video stalled and did not recover');
-                }
-            }, 10000); // Give it 10 seconds to recover from stall
-        };
-
-        // Add random starting position when video metadata is loaded
-        video.addEventListener('loadedmetadata', () => {
-            if (config.config.randomizeStart && video.duration) {
-                const minLength = config.config.minVideoLength || 30;
-                if (video.duration > minLength) {
-                    // Start at a random position, but not in the last 10% to avoid ending too quickly
-                    const maxStartTime = video.duration * 0.9;
-                    const randomStartTime = Math.random() * maxStartTime;
-                    video.currentTime = randomStartTime;
-                    console.log(`Video randomized: starting at ${Math.floor(randomStartTime)}s of ${Math.floor(video.duration)}s`);
-                }
+            // Try next video if available
+            if (videoUrls.length > 1) {
+                console.log('Trying next video in playlist...');
+                currentVideoIndex = (currentVideoIndex + 1) % videoUrls.length;
+                video.src = videoUrls[currentVideoIndex];
+                video.play().catch(err => console.error('Failed to play next video:', err));
+            } else {
+                this.handleVideoError(config, element, `Error code: ${video.error ? video.error.code : 'unknown'}`);
             }
-        });
+        };
+
+        // Handle playlist if multiple videos
+        if (videoUrls.length > 1 && !config.config.loop) {
+            video.onended = () => {
+                currentVideoIndex = (currentVideoIndex + 1) % videoUrls.length;
+                video.src = videoUrls[currentVideoIndex];
+                video.play().catch(e => console.error('Playlist playback error:', e));
+            };
+        }
+
+        // Handle random start position for long videos
+        if (config.config.randomizeStart) {
+            video.addEventListener('loadedmetadata', () => {
+                const duration = video.duration;
+                const minLength = config.config.minVideoLength || 30;
+
+                if (duration > minLength) {
+                    // Start somewhere between 0 and 80% of the video
+                    const randomTime = Math.random() * (duration * 0.8);
+                    console.log(`Randomizing position: seeking to ${Math.round(randomTime)}s (duration: ${Math.round(duration)}s)`);
+                    video.currentTime = randomTime;
+                }
+            }, { once: true });
+        }
 
         element.innerHTML = '';
         element.appendChild(video);
+
+        // Reset retry count on successful load (when video starts playing)
+        video.onplaying = () => {
+            if (element.videoRetryInfo) {
+                element.videoRetryInfo.retryCount = 0;
+            }
+        };
     }
 
-    // Handle video errors with retry logic
     handleVideoError(config, element, errorMessage) {
         const retryInfo = element.videoRetryInfo;
 
@@ -991,16 +1050,16 @@ class BulletinBoard {
         try {
             const textDiv = document.createElement('div');
             textDiv.className = 'text-component';
-            
+
             // Handle newline characters by converting \n to <br> tags
             const textWithBreaks = config.config.text.replace(/\n/g, '<br>');
             textDiv.innerHTML = textWithBreaks;
-            
+
             // Apply styling from config
             textDiv.style.color = config.config.color || '#333';
             textDiv.style.backgroundColor = config.config.backgroundColor || 'transparent';
             textDiv.style.fontWeight = config.config.fontWeight || 'normal';
-            
+
             // Handle font size
             if (config.config.fontSize === 'auto') {
                 textDiv.style.fontSize = '1.2rem'; // Start larger for better visibility
@@ -1008,10 +1067,10 @@ class BulletinBoard {
             } else {
                 textDiv.style.fontSize = config.config.fontSize;
             }
-            
+
             element.innerHTML = '';
             element.appendChild(textDiv);
-            
+
             // Auto-scale the text if needed
             if (config.config.fontSize === 'auto') {
                 // Multiple attempts to ensure proper scaling
@@ -1019,7 +1078,7 @@ class BulletinBoard {
                 setTimeout(() => this.autoScaleText(textDiv), 200);
                 setTimeout(() => this.autoScaleText(textDiv), 500);
             }
-            
+
         } catch (error) {
             console.error('Text component loading error:', error);
             element.innerHTML = `<div class="error-message">${this.getTranslation('failedToLoad')}</div>`;
@@ -1032,56 +1091,56 @@ class BulletinBoard {
         const attemptScaling = (attempt = 0) => {
             const container = textElement.parentElement;
             if (!container) return;
-            
+
             // Get actual container dimensions
             const containerRect = container.getBoundingClientRect();
             const containerWidth = containerRect.width - 30; // Account for padding
             const containerHeight = containerRect.height - 30; // Account for padding
-            
+
             if (containerWidth <= 0 || containerHeight <= 0) {
                 if (attempt < 5) {
                     setTimeout(() => attemptScaling(attempt + 1), 100);
                 }
                 return;
             }
-            
+
             // Reset text element for accurate measurement
             textElement.style.fontSize = '1.2rem';
-            
+
             // Force layout recalculation
             textElement.offsetHeight;
-            
+
             // Get text dimensions
             const textRect = textElement.getBoundingClientRect();
             const textWidth = textRect.width;
             const textHeight = textRect.height;
-            
+
             // For multi-line text, we need to consider the actual content height
             const scrollHeight = textElement.scrollHeight;
             const actualHeight = Math.max(textHeight, scrollHeight);
-            
+
             if (textWidth <= 0 || textHeight <= 0) {
                 if (attempt < 5) {
                     setTimeout(() => attemptScaling(attempt + 1), 100);
                 }
                 return;
             }
-            
+
             // Calculate scale factors using actual height for multi-line text
             const scaleX = containerWidth / textWidth;
             const scaleY = containerHeight / actualHeight;
             const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
-            
+
             // Apply the scale with less conservative margin
             const finalFontSize = Math.max(0.6, scale * 0.95);
             textElement.style.fontSize = finalFontSize + 'rem';
-            
+
             // Verify it fits and adjust if needed
             setTimeout(() => {
                 const newTextRect = textElement.getBoundingClientRect();
                 const newScrollHeight = textElement.scrollHeight;
                 const newActualHeight = Math.max(newTextRect.height, newScrollHeight);
-                
+
                 if (newTextRect.width > containerWidth || newActualHeight > containerHeight) {
                     // Still too big, reduce further but less aggressively
                     const adjustScale = Math.min(containerWidth / newTextRect.width, containerHeight / newActualHeight);
@@ -1090,7 +1149,7 @@ class BulletinBoard {
                 }
             }, 10);
         };
-        
+
         // Start the scaling process
         setTimeout(() => attemptScaling(), 100);
     }
@@ -1138,12 +1197,169 @@ class BulletinBoard {
 
             const now = Date.now();
             const refreshInterval = component.config.refreshInterval || 0;
-            
+
             if (refreshInterval > 0 && (now - componentData.lastUpdate) >= refreshInterval) {
                 this.loadComponentContent(component);
                 componentData.lastUpdate = now;
             }
         });
+    }
+
+    // Scheduler Implementation
+    setupScheduler() {
+        console.log('Setting up scheduler...');
+
+        // Check schedules every minute
+        this.schedulerInterval = setInterval(() => {
+            this.checkSchedules();
+        }, 60000);
+
+        // Initial check
+        setTimeout(() => this.checkSchedules(), 5000);
+    }
+
+    async checkSchedules() {
+        if (!this.config.schedules || this.config.schedules.length === 0) return;
+
+        const now = new Date();
+        const currentDay = now.getDay(); // 0-6 (Sunday-Saturday)
+        const currentTime = now.getHours() * 60 + now.getMinutes(); // Minutes from midnight
+
+        this.config.schedules.forEach(schedule => {
+            // Check if schedule is active for today
+            if (!schedule.activeDays.includes(currentDay)) {
+                this.revertSchedule(schedule.id);
+                return;
+            }
+
+            // Calculate start and end times in minutes from midnight
+            const startTime = this.calculateTime(schedule.start, now);
+            const endTime = this.calculateTime(schedule.end, now);
+
+            if (startTime === null || endTime === null) {
+                console.warn(`Could not calculate times for schedule ${schedule.id}`);
+                return;
+            }
+
+            // Check if current time is within range
+            // Handle overnight schedules (e.g. 22:00 to 06:00)
+            let isActive = false;
+            if (startTime <= endTime) {
+                isActive = currentTime >= startTime && currentTime < endTime;
+            } else {
+                isActive = currentTime >= startTime || currentTime < endTime;
+            }
+
+            if (isActive) {
+                if (!this.activeScheduleIds.has(schedule.id)) {
+                    this.applySchedule(schedule);
+                }
+            } else {
+                if (this.activeScheduleIds.has(schedule.id)) {
+                    this.revertSchedule(schedule.id);
+                }
+            }
+        });
+    }
+
+    calculateTime(timeConfig, now) {
+        if (timeConfig.type === 'fixed') {
+            const [hours, minutes] = timeConfig.value.split(':').map(Number);
+            return hours * 60 + minutes;
+        } else if (timeConfig.type === 'sunrise' || timeConfig.type === 'sunset') {
+            if (!this.sunTimes[timeConfig.type]) return null;
+
+            // Convert sun time (unix timestamp) to minutes from midnight
+            const sunDate = new Date(this.sunTimes[timeConfig.type] * 1000);
+            const sunMinutes = sunDate.getHours() * 60 + sunDate.getMinutes();
+
+            return sunMinutes + (timeConfig.offsetMinutes || 0);
+        }
+        return null;
+    }
+
+    applySchedule(schedule) {
+        console.log(`Applying schedule: ${schedule.id}`);
+        this.activeScheduleIds.add(schedule.id);
+
+        schedule.overrides.forEach(override => {
+            // Store original config if not already stored
+            if (!this.originalComponents.has(override.id)) {
+                const originalComponent = this.components.get(override.id);
+                if (originalComponent) {
+                    this.originalComponents.set(override.id, {
+                        config: JSON.parse(JSON.stringify(originalComponent.config))
+                    });
+                }
+            }
+
+            // Apply override
+            this.updateComponentConfig(override.id, override);
+        });
+    }
+
+    revertSchedule(scheduleId) {
+        if (!this.activeScheduleIds.has(scheduleId)) return;
+
+        console.log(`Reverting schedule: ${scheduleId}`);
+        this.activeScheduleIds.delete(scheduleId);
+
+        // Find schedule definition
+        const schedule = this.config.schedules.find(s => s.id === scheduleId);
+        if (!schedule) return;
+
+        schedule.overrides.forEach(override => {
+            // Check if any other active schedule is also overriding this component
+            // If so, don't revert yet (or re-apply the other schedule's override)
+            // For simplicity, we'll just revert to original if no other schedule claims it
+            // A more complex priority system could be added later
+
+            const original = this.originalComponents.get(override.id);
+            if (original) {
+                this.updateComponentConfig(override.id, original.config);
+                this.originalComponents.delete(override.id);
+            }
+        });
+    }
+
+    updateComponentConfig(componentId, newConfig) {
+        const componentData = this.components.get(componentId);
+        if (!componentData) {
+            console.warn(`Component ${componentId} not found for update`);
+            return;
+        }
+
+        console.log(`Updating component ${componentId} with new config`);
+
+        // Update stored config
+        // Merge new config into existing one to preserve ID and other props if not specified
+        const updatedConfig = { ...componentData.config, ...newConfig };
+        componentData.config = updatedConfig;
+
+        // Update UI
+        const wrapper = componentData.element;
+
+        // Update header title and icon
+        const header = wrapper.querySelector('.box-header');
+        if (header) {
+            header.innerHTML = `
+                <i class="fas ${this.getComponentIcon(updatedConfig.type)} me-2"></i>
+                ${updatedConfig.title}
+            `;
+        }
+
+        // Reload content
+        const content = wrapper.querySelector('.box-content');
+        if (content) {
+            content.innerHTML = `
+                <div class="loading">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">${this.getTranslation('loading')}</span>
+                    </div>
+                </div>
+            `;
+            this.loadComponentContent(updatedConfig);
+        }
     }
 }
 
@@ -1151,7 +1367,6 @@ class BulletinBoard {
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         window.bulletinBoard = new BulletinBoard();
-        // The initialization is now handled asynchronously within the constructor
     } catch (error) {
         console.error('Failed to initialize application:', error);
     }

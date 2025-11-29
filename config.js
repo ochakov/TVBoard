@@ -15,7 +15,7 @@ const BULLETIN_CONFIG = {
             repeat: 'no-repeat'
         }
     },
-    
+
     // Language configuration
     language: {
         selected: 'he', // 'en' for English, 'he' for Hebrew
@@ -23,14 +23,14 @@ const BULLETIN_CONFIG = {
         dateFormat: 'he-IL', // Locale for date formatting
         timeFormat: 'he-IL' // Locale for time formatting
     },
-    
+
     // Layout configuration
     layout: {
         columns: 3, // Number of columns in the grid
         autoRefresh: 30000, // Auto-refresh interval in milliseconds (30 seconds)
         weatherUpdateInterval: 600000 // Weather update interval in milliseconds (10 minutes)
     },
-    
+
     // Weather configuration
     weather: {
         enabled: true,
@@ -39,7 +39,7 @@ const BULLETIN_CONFIG = {
         units: 'metric', // metric, imperial, or kelvin
         useAppLanguage: true // Use the selected app language for weather descriptions
     },
-    
+
     // Components configuration
     components: [
         {
@@ -111,6 +111,70 @@ const BULLETIN_CONFIG = {
                 randomizeStart: true, // Randomize initial video and starting position
                 minVideoLength: 30 // Only randomize position for videos longer than this (seconds)
             }
+        }
+    ],
+
+    // Scheduled overrides
+    schedules: [
+        // Shabbat Mode - Friday (Start 1 hour before sunset)
+        {
+            id: 'shabbat-friday',
+            activeDays: [5], // Friday
+            start: { type: 'sunset', offsetMinutes: -60 }, // 1 hour before sunset
+            end: { type: 'fixed', value: '23:59' }, // Until end of day
+            overrides: [
+                {
+                    id: 'video-music',
+                    type: 'image',
+                    title: 'שבת שלום',
+                    size: 'small',
+                    config: {
+                        imageUrls: [
+                            'files/Shabbat2.png',
+                            'files/Shabbat3.png',
+                            'files/Shabbat6.png',
+                            'files/Shabbat7.png',
+                            'files/Shabbat11.png',
+                            'files/Shabbat14.png',
+                            'files/Shabbat18.png'
+                        ],
+                        interval: 300000,
+                        transitionDuration: 1000,
+                        altText: 'שבת שלום',
+                        refreshInterval: 0
+                    }
+                }
+            ]
+        },
+        // Shabbat Mode - Saturday (End 1 hour after sunset)
+        {
+            id: 'shabbat-saturday',
+            activeDays: [6], // Saturday
+            start: { type: 'fixed', value: '00:00' }, // From start of day
+            end: { type: 'sunset', offsetMinutes: 60 }, // Until 1 hour after sunset
+            overrides: [
+                {
+                    id: 'video-music',
+                    type: 'image',
+                    title: 'שבת שלום',
+                    size: 'small',
+                    config: {
+                        imageUrls: [
+                            'files/Shabbat2.png',
+                            'files/Shabbat3.png',
+                            'files/Shabbat6.png',
+                            'files/Shabbat7.png',
+                            'files/Shabbat11.png',
+                            'files/Shabbat14.png',
+                            'files/Shabbat18.png'
+                        ],
+                        interval: 300000,
+                        transitionDuration: 1000,
+                        altText: 'שבת שלום',
+                        refreshInterval: 0
+                    }
+                }
+            ]
         }
     ]
 };

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tvboard-v1';
+const CACHE_NAME = 'tvboard-v2';
 const VIDEO_CACHE_NAME = 'tvboard-videos-v1';
 
 const CORE_ASSETS = [
