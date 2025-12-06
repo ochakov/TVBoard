@@ -750,9 +750,20 @@ class BulletinBoard {
     }
 
     loadSlideshowComponent(config, element) {
+        // IMPORTANT: Clear any existing slideshow interval to prevent memory leaks
+        // This can happen when schedule overrides are applied/removed
+        const componentData = this.components.get(config.id);
+        if (componentData && componentData.slideshowInterval) {
+            console.log(`Clearing existing slideshow interval for ${config.id}`);
+            clearInterval(componentData.slideshowInterval);
+            componentData.slideshowInterval = null;
+        }
+
         const imageUrls = config.config.imageUrls;
         const interval = config.config.interval || 5000; // Default 5 seconds
         const transitionDuration = config.config.transitionDuration || 1000; // Default 1 second
+
+        console.log(`Starting slideshow for ${config.id} with interval: ${interval}ms`);
 
         // Create container
         const container = document.createElement('div');
@@ -777,6 +788,8 @@ class BulletinBoard {
         const slideshowInterval = setInterval(() => {
             const nextIndex = (currentIndex + 1) % slides.length;
 
+            console.log(`Slideshow ${config.id}: changing from image ${currentIndex} to ${nextIndex}`);
+
             // Fade out current
             slides[currentIndex].classList.remove('active');
 
@@ -786,8 +799,10 @@ class BulletinBoard {
             currentIndex = nextIndex;
         }, interval);
 
-        // Store interval to clean up later if needed
-        element.slideshowInterval = slideshowInterval;
+        // Store interval in component data for proper cleanup
+        if (componentData) {
+            componentData.slideshowInterval = slideshowInterval;
+        }
     }
 
     async loadRSSComponent(config, element) {
@@ -877,12 +892,18 @@ class BulletinBoard {
                     imageHtml = `<img src="${this.escapeHtml(item.thumbnail)}" alt="${this.escapeHtml(item.title || '')}" class="rss-icon">`;
                 }
 
+                // Get font styling from config with defaults
+                const titleFontSize = config.config.titleFontSize || '1rem';
+                const titleFontWeight = config.config.titleFontWeight || '600';
+                const dateFontSize = config.config.dateFontSize || '0.8rem';
+                const dateFontWeight = config.config.dateFontWeight || '400';
+
                 return `
                     <div class="rss-item">
                         ${imageHtml}
                         <div class="rss-content">
-                            <div class="rss-title">${this.escapeHtml(item.title)}</div>
-                            <div class="rss-date">${new Date(item.pubDate).toLocaleDateString(this.config.language.dateFormat)}</div>
+                            <div class="rss-title" style="font-size: ${titleFontSize}; font-weight: ${titleFontWeight};">${this.escapeHtml(item.title)}</div>
+                            <div class="rss-date" style="font-size: ${dateFontSize}; font-weight: ${dateFontWeight};">${new Date(item.pubDate).toLocaleDateString(this.config.language.dateFormat)}</div>
                         </div>
                     </div>
                 `;
@@ -1330,6 +1351,13 @@ class BulletinBoard {
         }
 
         console.log(`Updating component ${componentId} with new config`);
+
+        // IMPORTANT: Clear any existing slideshow interval before updating
+        if (componentData.slideshowInterval) {
+            console.log(`Clearing slideshow interval for ${componentId} before update`);
+            clearInterval(componentData.slideshowInterval);
+            componentData.slideshowInterval = null;
+        }
 
         // Update stored config
         // Merge new config into existing one to preserve ID and other props if not specified

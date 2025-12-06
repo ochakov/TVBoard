@@ -64,7 +64,13 @@ const BULLETIN_CONFIG = {
                 feedUrl: 'https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot',
                 maxItems: 5,
                 refreshInterval: 300000, // 5 minutes
-                showImages: false
+                showImages: false,
+                titleFontSize: '1.5rem',
+                titleFontWeight: '600',
+                descriptionFontSize: '1rem',
+                descriptionFontWeight: '400',
+                dateFontSize: '0.75rem',
+                dateFontWeight: '400'
             }
         },
         {
@@ -87,7 +93,13 @@ const BULLETIN_CONFIG = {
                 feedUrl: 'firebase://messages', // Use Firebase messages instead of local JSON
                 maxItems: 5,
                 refreshInterval: 300000, // 5 minutes
-                showImages: false
+                showImages: false,
+                titleFontSize: '2rem',
+                titleFontWeight: '600',
+                descriptionFontSize: '1rem',
+                descriptionFontWeight: '400',
+                dateFontSize: '1rem',
+                dateFontWeight: '400'
             }
         },
         {
